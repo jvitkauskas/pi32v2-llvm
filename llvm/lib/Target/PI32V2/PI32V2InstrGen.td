@@ -4582,6 +4582,8 @@ def DIV_U_PPR : PI32V2Inst32<(outs GPRPair:$r), (ins GPRPair:$s, GPR:$t), "${r} 
   let Inst{2} = 0;
   let Inst{1} = 0;
   let Inst{0} = 0;
+  let hasSideEffects = 0;
+  let Defs = [PSR];
 }
 def DIV_S_PPR : PI32V2Inst32<(outs GPRPair:$r), (ins GPRPair:$s, GPR:$t), "${r} = ${s} / ${t} (s)"> {
   bits<3> r;
@@ -4619,6 +4621,8 @@ def DIV_S_PPR : PI32V2Inst32<(outs GPRPair:$r), (ins GPRPair:$s, GPR:$t), "${r} 
   let Inst{2} = 0;
   let Inst{1} = 0;
   let Inst{0} = 0;
+  let hasSideEffects = 0;
+  let Defs = [PSR];
 }
 def ADD_SP_I_L : PI32V2Inst32<(outs ), (ins Opsimm_11_4_0_N_F:$n), "sp += ${n}"> {
   bits<11> n;
@@ -9276,6 +9280,10 @@ def RMW_OR_R : PI32V2Inst32<(outs ), (ins GPR:$r, Opsimm_6_4_0_N_F:$n, GPR:$s), 
   let Inst{2} = n{0};
   let Inst{1} = 0;
   let Inst{0} = 0;
+  let hasSideEffects = 0;
+  let mayLoad = 1;
+  let mayStore = 1;
+  let Defs = [PSR];
 }
 def RMW_XOR_R : PI32V2Inst32<(outs ), (ins GPR:$r, Opsimm_6_4_0_N_F:$n, GPR:$s), "[${r}+${n}] ^= ${s}"> {
   bits<4> r;
@@ -9313,6 +9321,10 @@ def RMW_XOR_R : PI32V2Inst32<(outs ), (ins GPR:$r, Opsimm_6_4_0_N_F:$n, GPR:$s),
   let Inst{2} = n{0};
   let Inst{1} = 0;
   let Inst{0} = 1;
+  let hasSideEffects = 0;
+  let mayLoad = 1;
+  let mayStore = 1;
+  let Defs = [PSR];
 }
 def RMW_AND_R : PI32V2Inst32<(outs ), (ins GPR:$r, Opsimm_6_4_0_N_F:$n, GPR:$s), "[${r}+${n}] &= ${s}"> {
   bits<4> r;
@@ -9350,6 +9362,10 @@ def RMW_AND_R : PI32V2Inst32<(outs ), (ins GPR:$r, Opsimm_6_4_0_N_F:$n, GPR:$s),
   let Inst{2} = n{0};
   let Inst{1} = 1;
   let Inst{0} = 0;
+  let hasSideEffects = 0;
+  let mayLoad = 1;
+  let mayStore = 1;
+  let Defs = [PSR];
 }
 def RMW_AND_INVR : PI32V2Inst32<(outs ), (ins GPR:$r, Opsimm_6_4_0_N_F:$n, GPR:$s), "[${r}+${n}] &= ~${s}"> {
   bits<4> r;
@@ -9387,6 +9403,10 @@ def RMW_AND_INVR : PI32V2Inst32<(outs ), (ins GPR:$r, Opsimm_6_4_0_N_F:$n, GPR:$
   let Inst{2} = n{0};
   let Inst{1} = 1;
   let Inst{0} = 1;
+  let hasSideEffects = 0;
+  let mayLoad = 1;
+  let mayStore = 1;
+  let Defs = [PSR];
 }
 def RMW_OR_BITR : PI32V2Inst32<(outs ), (ins GPR:$r, Opsimm_6_4_0_N_F:$n, GPR:$s), "[${r}+${n}] \\|= 1 << ${s}"> {
   bits<4> r;
@@ -9572,6 +9592,10 @@ def RMW_ADD_R : PI32V2Inst32<(outs ), (ins GPR:$r, Opsimm_6_4_0_N_F:$n, GPR:$s),
   let Inst{2} = n{0};
   let Inst{1} = 0;
   let Inst{0} = 0;
+  let hasSideEffects = 0;
+  let mayLoad = 1;
+  let mayStore = 1;
+  let Defs = [PSR];
 }
 def RMW_SUB_R : PI32V2Inst32<(outs ), (ins GPR:$r, Opsimm_6_4_0_N_F:$n, GPR:$s), "[${r}+${n}] -= ${s}"> {
   bits<4> r;
@@ -9609,6 +9633,10 @@ def RMW_SUB_R : PI32V2Inst32<(outs ), (ins GPR:$r, Opsimm_6_4_0_N_F:$n, GPR:$s),
   let Inst{2} = n{0};
   let Inst{1} = 1;
   let Inst{0} = 0;
+  let hasSideEffects = 0;
+  let mayLoad = 1;
+  let mayStore = 1;
+  let Defs = [PSR];
 }
 def RMW_LSL_I : PI32V2Inst32<(outs ), (ins GPR:$r, Opsimm_6_4_0_N_F:$n, Opuimm_5_1_0_32_F:$m), "[${r}+${n}] <<= ${m}"> {
   bits<4> r;
@@ -10326,6 +10354,8 @@ def ST_W_MODIMM : PI32V2Inst32<(outs ), (ins GPR:$r, Opsimm_6_4_0_N_F:$n, Opmodi
   let Inst{2} = m{2};
   let Inst{1} = m{1};
   let Inst{0} = m{0};
+  let hasSideEffects = 0;
+  let mayStore = 1;
 }
 def RMW_ADD_MODIMM : PI32V2Inst32<(outs ), (ins GPR:$r, Opsimm_6_4_0_N_F:$n, Opmodimm_F_F_F:$m), "[${r}+${n}] += ${m}"> {
   bits<4> r;
@@ -10363,6 +10393,10 @@ def RMW_ADD_MODIMM : PI32V2Inst32<(outs ), (ins GPR:$r, Opsimm_6_4_0_N_F:$n, Opm
   let Inst{2} = m{2};
   let Inst{1} = m{1};
   let Inst{0} = m{0};
+  let hasSideEffects = 0;
+  let mayLoad = 1;
+  let mayStore = 1;
+  let Defs = [PSR];
 }
 def RMW_ADD_S12 : PI32V2Inst32<(outs ), (ins GPR:$r, Opsimm_6_4_0_N_F:$n, Opsimm_12_1_0_N_F:$m), "[${r}+${n}] += ${m}"> {
   bits<4> r;
@@ -10400,6 +10434,10 @@ def RMW_ADD_S12 : PI32V2Inst32<(outs ), (ins GPR:$r, Opsimm_6_4_0_N_F:$n, Opsimm
   let Inst{2} = m{2};
   let Inst{1} = m{1};
   let Inst{0} = m{0};
+  let hasSideEffects = 0;
+  let mayLoad = 1;
+  let mayStore = 1;
+  let Defs = [PSR];
 }
 def LD_D_L : PI32V2Inst32<(outs GPRPair:$r), (ins GPR:$s, Opsimm_9_4_0_N_F:$n), "${r} = d[${s}+${n}]"> {
   bits<3> r;
@@ -13229,6 +13267,10 @@ def RMW_OR_MODIMM : PI32V2Inst32<(outs ), (ins GPR:$r, Opsimm_6_4_0_N_F:$n, Opmo
   let Inst{2} = m{2};
   let Inst{1} = m{1};
   let Inst{0} = m{0};
+  let hasSideEffects = 0;
+  let mayLoad = 1;
+  let mayStore = 1;
+  let Defs = [PSR];
 }
 def RMW_XOR_MODIMM : PI32V2Inst32<(outs ), (ins GPR:$r, Opsimm_6_4_0_N_F:$n, Opmodimm_F_F_F:$m), "[${r}+${n}] ^= ${m}"> {
   bits<4> r;
@@ -13266,6 +13308,10 @@ def RMW_XOR_MODIMM : PI32V2Inst32<(outs ), (ins GPR:$r, Opsimm_6_4_0_N_F:$n, Opm
   let Inst{2} = m{2};
   let Inst{1} = m{1};
   let Inst{0} = m{0};
+  let hasSideEffects = 0;
+  let mayLoad = 1;
+  let mayStore = 1;
+  let Defs = [PSR];
 }
 def RMW_AND_MODIMM : PI32V2Inst32<(outs ), (ins GPR:$r, Opsimm_6_4_0_N_F:$n, Opmodimm_F_F_F:$m), "[${r}+${n}] &= ${m}"> {
   bits<4> r;
@@ -13303,6 +13349,10 @@ def RMW_AND_MODIMM : PI32V2Inst32<(outs ), (ins GPR:$r, Opsimm_6_4_0_N_F:$n, Opm
   let Inst{2} = m{2};
   let Inst{1} = m{1};
   let Inst{0} = m{0};
+  let hasSideEffects = 0;
+  let mayLoad = 1;
+  let mayStore = 1;
+  let Defs = [PSR];
 }
 def RMW_AND_NMODIMM : PI32V2Inst32<(outs ), (ins GPR:$r, Opsimm_6_4_0_N_F:$n, Opmodimm_T_F_F:$m), "[${r}+${n}] &= ${m}"> {
   bits<4> r;
@@ -13340,6 +13390,10 @@ def RMW_AND_NMODIMM : PI32V2Inst32<(outs ), (ins GPR:$r, Opsimm_6_4_0_N_F:$n, Op
   let Inst{2} = m{2};
   let Inst{1} = m{1};
   let Inst{0} = m{0};
+  let hasSideEffects = 0;
+  let mayLoad = 1;
+  let mayStore = 1;
+  let Defs = [PSR];
 }
 def POP_RETS_RMASK : PI32V2Inst32<(outs ), (ins Oprmask_rets:$n), "\\{${n}\\} = [sp++]"> {
   bits<16> n;

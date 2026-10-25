@@ -21,6 +21,16 @@ class PI32V2TargetLowering : public TargetLowering {
   const PI32V2Subtarget &Subtarget;
 
 public:
+  // A global's address plus a constant stays an add (lowerAddress).
+  bool isOffsetFoldingLegal(const GlobalAddressSDNode *GA) const override {
+    return false;
+  }
+  // No overflow nodes for an add or compare: they would come back as a
+  // 0/1 value in a register, not a branch.
+  bool shouldFormOverflowOp(unsigned Opcode, EVT VT,
+                            bool MathUsed) const override {
+    return false;
+  }
   // Post-increment accesses ([b++=n], n a multiple of the access size).
   bool getPostIndexedAddressParts(SDNode *N, SDNode *Op, SDValue &Base,
                                   SDValue &Offset, ISD::MemIndexedMode &AM,
@@ -58,6 +68,9 @@ public:
   PI32V2TargetLowering(const TargetMachine &TM, const PI32V2Subtarget &STI);
 
   SDValue LowerOperation(SDValue Op, SelectionDAG &DAG) const override;
+  // 64-bit division and remainder by a divisor that fits in 32 bits.
+  void ReplaceNodeResults(SDNode *N, SmallVectorImpl<SDValue> &Results,
+                          SelectionDAG &DAG) const override;
 
   SDValue LowerFormalArguments(SDValue Chain, CallingConv::ID CallConv,
                                bool IsVarArg,

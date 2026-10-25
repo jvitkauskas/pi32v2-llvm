@@ -23,6 +23,13 @@ def SDT_PI32V2SelectCC : SDTypeProfile<1, 5, [SDTCisSameAs<0, 3>, SDTCisSameAs<1
 
 def PI32V2call : SDNode<"PI32V2ISD::CALL", SDT_PI32V2Call,
                         [SDNPHasChain, SDNPOutGlue, SDNPOptInGlue, SDNPVariadic]>;
+// (quotient low, high) = (dividend low, high) / divisor: a 64-bit dividend by a
+// 32-bit divisor (div.u.ppr, div.s.ppr; PI32V2DAGToDAGISel).
+def SDT_PI32V2Div64 : SDTypeProfile<2, 3, [SDTCisVT<0, i32>, SDTCisVT<1, i32>,
+                                           SDTCisVT<2, i32>, SDTCisVT<3, i32>,
+                                           SDTCisVT<4, i32>]>;
+def PI32V2udiv64 : SDNode<"PI32V2ISD::UDIV64", SDT_PI32V2Div64>;
+def PI32V2sdiv64 : SDNode<"PI32V2ISD::SDIV64", SDT_PI32V2Div64>;
 def PI32V2tail : SDNode<"PI32V2ISD::TAIL", SDT_PI32V2Call,
                         [SDNPHasChain, SDNPOptInGlue, SDNPVariadic]>;
 def PI32V2ret : SDNode<"PI32V2ISD::RET", SDTNone,
@@ -292,6 +299,42 @@ def : Pat<(i32 (sextloadi16 (AddrH i32:$b, i32:$n))), (LD_HS_L GPR:$b, $n)>;
 def : Pat<(store (i32 GPR:$v), (AddrW i32:$b, i32:$n)), (ST_W_L GPR:$b, $n, GPR:$v)>;
 def : Pat<(truncstorei8 (i32 GPR:$v), (AddrB i32:$b, i32:$n)), (ST_B_L GPR:$b, $n, GPR:$v)>;
 def : Pat<(truncstorei16 (i32 GPR:$v), (AddrH i32:$b, i32:$n)), (ST_H_L GPR:$b, $n, GPR:$v)>;
+
+// Read-modify-write of a word in memory, and a constant stored, as JieLi's
+// compiler makes register updates: [r+n] |= m, [r+n] &= ~s, [r+n] = m, ...
+def AddrRMW : ComplexPattern<iPTR, 2, "selectAddrRMW", [], []>;
+def nmodimm : ImmLeaf<i32, [{ return PI32V2::modImmRawFor(~uint32_t(Imm)).has_value(); }]>;
+def simm12rmw : ImmLeaf<i32, [{ return isInt<12>(Imm); }]>;
+let AddedComplexity = 10 in {
+multiclass RMWReg<SDNode Op, Instruction I> {
+  def : Pat<(store (Op (i32 (load (AddrRMW i32:$b, i32:$n))), i32:$s),
+                   (AddrRMW i32:$b, i32:$n)),
+            (I GPR:$b, $n, GPR:$s)>;
+}
+multiclass RMWImm<SDNode Op, ImmLeaf L, Instruction I> {
+  def : Pat<(store (Op (i32 (load (AddrRMW i32:$b, i32:$n))), L:$m),
+                   (AddrRMW i32:$b, i32:$n)),
+            (I GPR:$b, $n, imm:$m)>;
+}
+defm : RMWReg<or, RMW_OR_R>;
+defm : RMWReg<xor, RMW_XOR_R>;
+defm : RMWReg<and, RMW_AND_R>;
+defm : RMWReg<add, RMW_ADD_R>;
+def : Pat<(store (sub (i32 (load (AddrRMW i32:$b, i32:$n))), i32:$s),
+                 (AddrRMW i32:$b, i32:$n)),
+          (RMW_SUB_R GPR:$b, $n, GPR:$s)>;
+def : Pat<(store (and (i32 (load (AddrRMW i32:$b, i32:$n))), (not i32:$s)),
+                 (AddrRMW i32:$b, i32:$n)),
+          (RMW_AND_INVR GPR:$b, $n, GPR:$s)>;
+defm : RMWImm<or, modimm, RMW_OR_MODIMM>;
+defm : RMWImm<xor, modimm, RMW_XOR_MODIMM>;
+defm : RMWImm<and, modimm, RMW_AND_MODIMM>;
+defm : RMWImm<and, nmodimm, RMW_AND_NMODIMM>;
+defm : RMWImm<add, simm12rmw, RMW_ADD_S12>;
+defm : RMWImm<add, modimm, RMW_ADD_MODIMM>;
+def : Pat<(store (i32 modimm:$m), (AddrRMW i32:$b, i32:$n)),
+          (ST_W_MODIMM GPR:$b, $n, imm:$m)>;
+}
 
 // Base plus index register, the index scaled by the access size or not:
 // [b+i<<2], h[b+i<<1], [b+i], b[b+i] (an index that is a constant is an

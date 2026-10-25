@@ -7,6 +7,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "PI32V2TargetMachine.h"
+#include "PI32V2TargetTransformInfo.h"
 #include "PI32V2.h"
 #include "PI32V2MachineFunctionInfo.h"
 #include "TargetInfo/PI32V2TargetInfo.h"
@@ -53,6 +54,11 @@ PI32V2TargetMachine::getSubtargetImpl(const Function &F) const {
   if (!I)
     I = std::make_unique<PI32V2Subtarget>(TargetTriple, CPU, FS, *this);
   return I.get();
+}
+
+TargetTransformInfo
+PI32V2TargetMachine::getTargetTransformInfo(const Function &F) const {
+  return TargetTransformInfo(std::make_unique<PI32V2TTIImpl>(this, F));
 }
 
 MachineFunctionInfo *PI32V2TargetMachine::createMachineFunctionInfo(
