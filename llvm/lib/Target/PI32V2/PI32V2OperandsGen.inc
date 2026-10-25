@@ -71,21 +71,35 @@ static DecodeStatus decodeOpsimm_5_1_0_N_F(MCInst &Inst, uint64_t Raw, uint64_t 
   return MCDisassembler::Success;
 }
 
-static DecodeStatus decodeOptarget_8_2(MCInst &Inst, uint64_t Raw, uint64_t Address,
+static DecodeStatus decodeOptarget_8_2_goto(MCInst &Inst, uint64_t Raw, uint64_t Address,
     const MCDisassembler *Decoder) {
   int64_t V = SignExtend64<8>(Raw) * 2;
   Inst.addOperand(MCOperand::createImm(V));
   return MCDisassembler::Success;
 }
 
-static DecodeStatus decodeOptarget_11_2(MCInst &Inst, uint64_t Raw, uint64_t Address,
+static DecodeStatus decodeOptarget_11_2_goto(MCInst &Inst, uint64_t Raw, uint64_t Address,
     const MCDisassembler *Decoder) {
   int64_t V = SignExtend64<11>(Raw) * 2;
   Inst.addOperand(MCOperand::createImm(V));
   return MCDisassembler::Success;
 }
 
-static DecodeStatus decodeOptarget_22_2(MCInst &Inst, uint64_t Raw, uint64_t Address,
+static DecodeStatus decodeOptarget_8_2_call(MCInst &Inst, uint64_t Raw, uint64_t Address,
+    const MCDisassembler *Decoder) {
+  int64_t V = SignExtend64<8>(Raw) * 2;
+  Inst.addOperand(MCOperand::createImm(V));
+  return MCDisassembler::Success;
+}
+
+static DecodeStatus decodeOptarget_22_2_call(MCInst &Inst, uint64_t Raw, uint64_t Address,
+    const MCDisassembler *Decoder) {
+  int64_t V = SignExtend64<22>(Raw) * 2;
+  Inst.addOperand(MCOperand::createImm(V));
+  return MCDisassembler::Success;
+}
+
+static DecodeStatus decodeOptarget_22_2_goto(MCInst &Inst, uint64_t Raw, uint64_t Address,
     const MCDisassembler *Decoder) {
   int64_t V = SignExtend64<22>(Raw) * 2;
   Inst.addOperand(MCOperand::createImm(V));
@@ -353,7 +367,7 @@ static DecodeStatus decodeOprmask_pc(MCInst &Inst, uint64_t Raw, uint64_t Addres
   return MCDisassembler::Success;
 }
 
-static DecodeStatus decodeOptarget_9_2(MCInst &Inst, uint64_t Raw, uint64_t Address,
+static DecodeStatus decodeOptarget_9_2_goto(MCInst &Inst, uint64_t Raw, uint64_t Address,
     const MCDisassembler *Decoder) {
   int64_t V = SignExtend64<9>(Raw) * 2;
   Inst.addOperand(MCOperand::createImm(V));
@@ -381,7 +395,7 @@ static DecodeStatus decodeOpmodimm_F_T_F(MCInst &Inst, uint64_t Raw, uint64_t Ad
   return MCDisassembler::Success;
 }
 
-static DecodeStatus decodeOptarget_16_2(MCInst &Inst, uint64_t Raw, uint64_t Address,
+static DecodeStatus decodeOptarget_16_2_goto(MCInst &Inst, uint64_t Raw, uint64_t Address,
     const MCDisassembler *Decoder) {
   int64_t V = SignExtend64<16>(Raw) * 2;
   Inst.addOperand(MCOperand::createImm(V));
@@ -430,7 +444,14 @@ static DecodeStatus decodeOpuimm_10_1_0_N_F(MCInst &Inst, uint64_t Raw, uint64_t
   return MCDisassembler::Success;
 }
 
-static DecodeStatus decodeOptarget_31_2(MCInst &Inst, uint64_t Raw, uint64_t Address,
+static DecodeStatus decodeOptarget_31_2_call(MCInst &Inst, uint64_t Raw, uint64_t Address,
+    const MCDisassembler *Decoder) {
+  int64_t V = SignExtend64<31>(Raw) * 2;
+  Inst.addOperand(MCOperand::createImm(V));
+  return MCDisassembler::Success;
+}
+
+static DecodeStatus decodeOptarget_31_2_goto(MCInst &Inst, uint64_t Raw, uint64_t Address,
     const MCDisassembler *Decoder) {
   int64_t V = SignExtend64<31>(Raw) * 2;
   Inst.addOperand(MCOperand::createImm(V));
@@ -468,11 +489,15 @@ uint64_t getOpsimm_5_4_0_N_FValue(const MCInst &MI, unsigned OpNo, SmallVectorIm
     const MCSubtargetInfo &STI) const;
 uint64_t getOpsimm_5_1_0_N_FValue(const MCInst &MI, unsigned OpNo, SmallVectorImpl<MCFixup> &Fixups,
     const MCSubtargetInfo &STI) const;
-uint64_t getOptarget_8_2Value(const MCInst &MI, unsigned OpNo, SmallVectorImpl<MCFixup> &Fixups,
+uint64_t getOptarget_8_2_gotoValue(const MCInst &MI, unsigned OpNo, SmallVectorImpl<MCFixup> &Fixups,
     const MCSubtargetInfo &STI) const;
-uint64_t getOptarget_11_2Value(const MCInst &MI, unsigned OpNo, SmallVectorImpl<MCFixup> &Fixups,
+uint64_t getOptarget_11_2_gotoValue(const MCInst &MI, unsigned OpNo, SmallVectorImpl<MCFixup> &Fixups,
     const MCSubtargetInfo &STI) const;
-uint64_t getOptarget_22_2Value(const MCInst &MI, unsigned OpNo, SmallVectorImpl<MCFixup> &Fixups,
+uint64_t getOptarget_8_2_callValue(const MCInst &MI, unsigned OpNo, SmallVectorImpl<MCFixup> &Fixups,
+    const MCSubtargetInfo &STI) const;
+uint64_t getOptarget_22_2_callValue(const MCInst &MI, unsigned OpNo, SmallVectorImpl<MCFixup> &Fixups,
+    const MCSubtargetInfo &STI) const;
+uint64_t getOptarget_22_2_gotoValue(const MCInst &MI, unsigned OpNo, SmallVectorImpl<MCFixup> &Fixups,
     const MCSubtargetInfo &STI) const;
 uint64_t getOprlist4_FValue(const MCInst &MI, unsigned OpNo, SmallVectorImpl<MCFixup> &Fixups,
     const MCSubtargetInfo &STI) const;
@@ -550,7 +575,7 @@ uint64_t getOprmask_retsValue(const MCInst &MI, unsigned OpNo, SmallVectorImpl<M
     const MCSubtargetInfo &STI) const;
 uint64_t getOprmask_pcValue(const MCInst &MI, unsigned OpNo, SmallVectorImpl<MCFixup> &Fixups,
     const MCSubtargetInfo &STI) const;
-uint64_t getOptarget_9_2Value(const MCInst &MI, unsigned OpNo, SmallVectorImpl<MCFixup> &Fixups,
+uint64_t getOptarget_9_2_gotoValue(const MCInst &MI, unsigned OpNo, SmallVectorImpl<MCFixup> &Fixups,
     const MCSubtargetInfo &STI) const;
 uint64_t getOpuimm_2_1_1_N_FValue(const MCInst &MI, unsigned OpNo, SmallVectorImpl<MCFixup> &Fixups,
     const MCSubtargetInfo &STI) const;
@@ -558,7 +583,7 @@ uint64_t getOpuimm_2_1_0_N_FValue(const MCInst &MI, unsigned OpNo, SmallVectorIm
     const MCSubtargetInfo &STI) const;
 uint64_t getOpmodimm_F_T_FValue(const MCInst &MI, unsigned OpNo, SmallVectorImpl<MCFixup> &Fixups,
     const MCSubtargetInfo &STI) const;
-uint64_t getOptarget_16_2Value(const MCInst &MI, unsigned OpNo, SmallVectorImpl<MCFixup> &Fixups,
+uint64_t getOptarget_16_2_gotoValue(const MCInst &MI, unsigned OpNo, SmallVectorImpl<MCFixup> &Fixups,
     const MCSubtargetInfo &STI) const;
 uint64_t getOpuimm_4_1_0_16_FValue(const MCInst &MI, unsigned OpNo, SmallVectorImpl<MCFixup> &Fixups,
     const MCSubtargetInfo &STI) const;
@@ -572,7 +597,9 @@ uint64_t getOpsimm_10_1_0_N_FValue(const MCInst &MI, unsigned OpNo, SmallVectorI
     const MCSubtargetInfo &STI) const;
 uint64_t getOpuimm_10_1_0_N_FValue(const MCInst &MI, unsigned OpNo, SmallVectorImpl<MCFixup> &Fixups,
     const MCSubtargetInfo &STI) const;
-uint64_t getOptarget_31_2Value(const MCInst &MI, unsigned OpNo, SmallVectorImpl<MCFixup> &Fixups,
+uint64_t getOptarget_31_2_callValue(const MCInst &MI, unsigned OpNo, SmallVectorImpl<MCFixup> &Fixups,
+    const MCSubtargetInfo &STI) const;
+uint64_t getOptarget_31_2_gotoValue(const MCInst &MI, unsigned OpNo, SmallVectorImpl<MCFixup> &Fixups,
     const MCSubtargetInfo &STI) const;
 uint64_t getOpsimm_31_2_0_N_FValue(const MCInst &MI, unsigned OpNo, SmallVectorImpl<MCFixup> &Fixups,
     const MCSubtargetInfo &STI) const;
@@ -664,7 +691,7 @@ uint64_t PI32V2MCCodeEmitter::getOpsimm_5_1_0_N_FValue(const MCInst &MI, unsigne
   return (uint64_t)((V - (0)) / (1)) & ((1ull << 5) - 1);
 }
 
-uint64_t PI32V2MCCodeEmitter::getOptarget_8_2Value(const MCInst &MI, unsigned OpNo,
+uint64_t PI32V2MCCodeEmitter::getOptarget_8_2_gotoValue(const MCInst &MI, unsigned OpNo,
     SmallVectorImpl<MCFixup> &Fixups, const MCSubtargetInfo &STI) const {
   const MCOperand &MO = MI.getOperand(OpNo);
   if (!MO.isImm())
@@ -672,7 +699,7 @@ uint64_t PI32V2MCCodeEmitter::getOptarget_8_2Value(const MCInst &MI, unsigned Op
   return (uint64_t)(MO.getImm() / 2) & ((1ull << 8) - 1);
 }
 
-uint64_t PI32V2MCCodeEmitter::getOptarget_11_2Value(const MCInst &MI, unsigned OpNo,
+uint64_t PI32V2MCCodeEmitter::getOptarget_11_2_gotoValue(const MCInst &MI, unsigned OpNo,
     SmallVectorImpl<MCFixup> &Fixups, const MCSubtargetInfo &STI) const {
   const MCOperand &MO = MI.getOperand(OpNo);
   if (!MO.isImm())
@@ -680,7 +707,23 @@ uint64_t PI32V2MCCodeEmitter::getOptarget_11_2Value(const MCInst &MI, unsigned O
   return (uint64_t)(MO.getImm() / 2) & ((1ull << 11) - 1);
 }
 
-uint64_t PI32V2MCCodeEmitter::getOptarget_22_2Value(const MCInst &MI, unsigned OpNo,
+uint64_t PI32V2MCCodeEmitter::getOptarget_8_2_callValue(const MCInst &MI, unsigned OpNo,
+    SmallVectorImpl<MCFixup> &Fixups, const MCSubtargetInfo &STI) const {
+  const MCOperand &MO = MI.getOperand(OpNo);
+  if (!MO.isImm())
+    return encodeTargetExpr(MI, OpNo, 8, Fixups, STI);
+  return (uint64_t)(MO.getImm() / 2) & ((1ull << 8) - 1);
+}
+
+uint64_t PI32V2MCCodeEmitter::getOptarget_22_2_callValue(const MCInst &MI, unsigned OpNo,
+    SmallVectorImpl<MCFixup> &Fixups, const MCSubtargetInfo &STI) const {
+  const MCOperand &MO = MI.getOperand(OpNo);
+  if (!MO.isImm())
+    return encodeTargetExpr(MI, OpNo, 22, Fixups, STI);
+  return (uint64_t)(MO.getImm() / 2) & ((1ull << 22) - 1);
+}
+
+uint64_t PI32V2MCCodeEmitter::getOptarget_22_2_gotoValue(const MCInst &MI, unsigned OpNo,
     SmallVectorImpl<MCFixup> &Fixups, const MCSubtargetInfo &STI) const {
   const MCOperand &MO = MI.getOperand(OpNo);
   if (!MO.isImm())
@@ -1010,7 +1053,7 @@ uint64_t PI32V2MCCodeEmitter::getOprmask_pcValue(const MCInst &MI, unsigned OpNo
   return (uint64_t)MO.getImm();
 }
 
-uint64_t PI32V2MCCodeEmitter::getOptarget_9_2Value(const MCInst &MI, unsigned OpNo,
+uint64_t PI32V2MCCodeEmitter::getOptarget_9_2_gotoValue(const MCInst &MI, unsigned OpNo,
     SmallVectorImpl<MCFixup> &Fixups, const MCSubtargetInfo &STI) const {
   const MCOperand &MO = MI.getOperand(OpNo);
   if (!MO.isImm())
@@ -1042,7 +1085,7 @@ uint64_t PI32V2MCCodeEmitter::getOpmodimm_F_T_FValue(const MCInst &MI, unsigned 
   return PI32V2::modImmRaw((uint32_t)MO.getImm());
 }
 
-uint64_t PI32V2MCCodeEmitter::getOptarget_16_2Value(const MCInst &MI, unsigned OpNo,
+uint64_t PI32V2MCCodeEmitter::getOptarget_16_2_gotoValue(const MCInst &MI, unsigned OpNo,
     SmallVectorImpl<MCFixup> &Fixups, const MCSubtargetInfo &STI) const {
   const MCOperand &MO = MI.getOperand(OpNo);
   if (!MO.isImm())
@@ -1103,7 +1146,15 @@ uint64_t PI32V2MCCodeEmitter::getOpuimm_10_1_0_N_FValue(const MCInst &MI, unsign
   return (uint64_t)((V - (0)) / (1)) & ((1ull << 10) - 1);
 }
 
-uint64_t PI32V2MCCodeEmitter::getOptarget_31_2Value(const MCInst &MI, unsigned OpNo,
+uint64_t PI32V2MCCodeEmitter::getOptarget_31_2_callValue(const MCInst &MI, unsigned OpNo,
+    SmallVectorImpl<MCFixup> &Fixups, const MCSubtargetInfo &STI) const {
+  const MCOperand &MO = MI.getOperand(OpNo);
+  if (!MO.isImm())
+    return encodeTargetExpr(MI, OpNo, 31, Fixups, STI);
+  return (uint64_t)(MO.getImm() / 2) & ((1ull << 31) - 1);
+}
+
+uint64_t PI32V2MCCodeEmitter::getOptarget_31_2_gotoValue(const MCInst &MI, unsigned OpNo,
     SmallVectorImpl<MCFixup> &Fixups, const MCSubtargetInfo &STI) const {
   const MCOperand &MO = MI.getOperand(OpNo);
   if (!MO.isImm())
@@ -1134,9 +1185,11 @@ void printOpbit_F(const MCInst *MI, unsigned OpNo, raw_ostream &O);
 void printOpuimm_6_4_0_N_T(const MCInst *MI, unsigned OpNo, raw_ostream &O);
 void printOpsimm_5_4_0_N_F(const MCInst *MI, unsigned OpNo, raw_ostream &O);
 void printOpsimm_5_1_0_N_F(const MCInst *MI, unsigned OpNo, raw_ostream &O);
-void printOptarget_8_2(const MCInst *MI, uint64_t Address, unsigned OpNo, raw_ostream &O);
-void printOptarget_11_2(const MCInst *MI, uint64_t Address, unsigned OpNo, raw_ostream &O);
-void printOptarget_22_2(const MCInst *MI, uint64_t Address, unsigned OpNo, raw_ostream &O);
+void printOptarget_8_2_goto(const MCInst *MI, uint64_t Address, unsigned OpNo, raw_ostream &O);
+void printOptarget_11_2_goto(const MCInst *MI, uint64_t Address, unsigned OpNo, raw_ostream &O);
+void printOptarget_8_2_call(const MCInst *MI, uint64_t Address, unsigned OpNo, raw_ostream &O);
+void printOptarget_22_2_call(const MCInst *MI, uint64_t Address, unsigned OpNo, raw_ostream &O);
+void printOptarget_22_2_goto(const MCInst *MI, uint64_t Address, unsigned OpNo, raw_ostream &O);
 void printOprlist4_F(const MCInst *MI, unsigned OpNo, raw_ostream &O);
 void printOpsrmask_6(const MCInst *MI, unsigned OpNo, raw_ostream &O);
 void printOprmask_E(const MCInst *MI, unsigned OpNo, raw_ostream &O);
@@ -1175,18 +1228,19 @@ void printOpsimm_9_2_0_N_F(const MCInst *MI, unsigned OpNo, raw_ostream &O);
 void printOpsimm_9_1_0_N_F(const MCInst *MI, unsigned OpNo, raw_ostream &O);
 void printOprmask_rets(const MCInst *MI, unsigned OpNo, raw_ostream &O);
 void printOprmask_pc(const MCInst *MI, unsigned OpNo, raw_ostream &O);
-void printOptarget_9_2(const MCInst *MI, uint64_t Address, unsigned OpNo, raw_ostream &O);
+void printOptarget_9_2_goto(const MCInst *MI, uint64_t Address, unsigned OpNo, raw_ostream &O);
 void printOpuimm_2_1_1_N_F(const MCInst *MI, unsigned OpNo, raw_ostream &O);
 void printOpuimm_2_1_0_N_F(const MCInst *MI, unsigned OpNo, raw_ostream &O);
 void printOpmodimm_F_T_F(const MCInst *MI, unsigned OpNo, raw_ostream &O);
-void printOptarget_16_2(const MCInst *MI, uint64_t Address, unsigned OpNo, raw_ostream &O);
+void printOptarget_16_2_goto(const MCInst *MI, uint64_t Address, unsigned OpNo, raw_ostream &O);
 void printOpuimm_4_1_0_16_F(const MCInst *MI, unsigned OpNo, raw_ostream &O);
 void printOpsimm_8_1_0_N_F(const MCInst *MI, unsigned OpNo, raw_ostream &O);
 void printOpuimm_9_1_0_N_F(const MCInst *MI, unsigned OpNo, raw_ostream &O);
 void printOppair_regs_F(const MCInst *MI, unsigned OpNo, raw_ostream &O);
 void printOpsimm_10_1_0_N_F(const MCInst *MI, unsigned OpNo, raw_ostream &O);
 void printOpuimm_10_1_0_N_F(const MCInst *MI, unsigned OpNo, raw_ostream &O);
-void printOptarget_31_2(const MCInst *MI, uint64_t Address, unsigned OpNo, raw_ostream &O);
+void printOptarget_31_2_call(const MCInst *MI, uint64_t Address, unsigned OpNo, raw_ostream &O);
+void printOptarget_31_2_goto(const MCInst *MI, uint64_t Address, unsigned OpNo, raw_ostream &O);
 void printOpsimm_31_2_0_N_F(const MCInst *MI, unsigned OpNo, raw_ostream &O);
 #endif // PI32V2_GEN_PRINTER_DECLS
 
@@ -1284,7 +1338,7 @@ void PI32V2InstPrinter::printOpsimm_5_1_0_N_F(const MCInst *MI, unsigned OpNo, r
   O << std::to_string(MO.getImm());
 }
 
-void PI32V2InstPrinter::printOptarget_8_2(const MCInst *MI, uint64_t Address, unsigned OpNo, raw_ostream &O) {
+void PI32V2InstPrinter::printOptarget_8_2_goto(const MCInst *MI, uint64_t Address, unsigned OpNo, raw_ostream &O) {
   const MCOperand &MO = MI->getOperand(OpNo);
   if (!MO.isImm()) {
     MAI.printExpr(O, *MO.getExpr());
@@ -1293,7 +1347,7 @@ void PI32V2InstPrinter::printOptarget_8_2(const MCInst *MI, uint64_t Address, un
   O << std::to_string(MO.getImm());
 }
 
-void PI32V2InstPrinter::printOptarget_11_2(const MCInst *MI, uint64_t Address, unsigned OpNo, raw_ostream &O) {
+void PI32V2InstPrinter::printOptarget_11_2_goto(const MCInst *MI, uint64_t Address, unsigned OpNo, raw_ostream &O) {
   const MCOperand &MO = MI->getOperand(OpNo);
   if (!MO.isImm()) {
     MAI.printExpr(O, *MO.getExpr());
@@ -1302,7 +1356,25 @@ void PI32V2InstPrinter::printOptarget_11_2(const MCInst *MI, uint64_t Address, u
   O << std::to_string(MO.getImm());
 }
 
-void PI32V2InstPrinter::printOptarget_22_2(const MCInst *MI, uint64_t Address, unsigned OpNo, raw_ostream &O) {
+void PI32V2InstPrinter::printOptarget_8_2_call(const MCInst *MI, uint64_t Address, unsigned OpNo, raw_ostream &O) {
+  const MCOperand &MO = MI->getOperand(OpNo);
+  if (!MO.isImm()) {
+    MAI.printExpr(O, *MO.getExpr());
+    return;
+  }
+  O << std::to_string(MO.getImm());
+}
+
+void PI32V2InstPrinter::printOptarget_22_2_call(const MCInst *MI, uint64_t Address, unsigned OpNo, raw_ostream &O) {
+  const MCOperand &MO = MI->getOperand(OpNo);
+  if (!MO.isImm()) {
+    MAI.printExpr(O, *MO.getExpr());
+    return;
+  }
+  O << std::to_string(MO.getImm());
+}
+
+void PI32V2InstPrinter::printOptarget_22_2_goto(const MCInst *MI, uint64_t Address, unsigned OpNo, raw_ostream &O) {
   const MCOperand &MO = MI->getOperand(OpNo);
   if (!MO.isImm()) {
     MAI.printExpr(O, *MO.getExpr());
@@ -1659,7 +1731,7 @@ void PI32V2InstPrinter::printOprmask_pc(const MCInst *MI, unsigned OpNo, raw_ost
   O << PI32V2::rmaskText(MO.getImm(), "pc");
 }
 
-void PI32V2InstPrinter::printOptarget_9_2(const MCInst *MI, uint64_t Address, unsigned OpNo, raw_ostream &O) {
+void PI32V2InstPrinter::printOptarget_9_2_goto(const MCInst *MI, uint64_t Address, unsigned OpNo, raw_ostream &O) {
   const MCOperand &MO = MI->getOperand(OpNo);
   if (!MO.isImm()) {
     MAI.printExpr(O, *MO.getExpr());
@@ -1695,7 +1767,7 @@ void PI32V2InstPrinter::printOpmodimm_F_T_F(const MCInst *MI, unsigned OpNo, raw
   O << std::to_string((uint32_t)MO.getImm());
 }
 
-void PI32V2InstPrinter::printOptarget_16_2(const MCInst *MI, uint64_t Address, unsigned OpNo, raw_ostream &O) {
+void PI32V2InstPrinter::printOptarget_16_2_goto(const MCInst *MI, uint64_t Address, unsigned OpNo, raw_ostream &O) {
   const MCOperand &MO = MI->getOperand(OpNo);
   if (!MO.isImm()) {
     MAI.printExpr(O, *MO.getExpr());
@@ -1758,7 +1830,16 @@ void PI32V2InstPrinter::printOpuimm_10_1_0_N_F(const MCInst *MI, unsigned OpNo, 
   O << std::to_string(MO.getImm());
 }
 
-void PI32V2InstPrinter::printOptarget_31_2(const MCInst *MI, uint64_t Address, unsigned OpNo, raw_ostream &O) {
+void PI32V2InstPrinter::printOptarget_31_2_call(const MCInst *MI, uint64_t Address, unsigned OpNo, raw_ostream &O) {
+  const MCOperand &MO = MI->getOperand(OpNo);
+  if (!MO.isImm()) {
+    MAI.printExpr(O, *MO.getExpr());
+    return;
+  }
+  O << std::to_string(MO.getImm());
+}
+
+void PI32V2InstPrinter::printOptarget_31_2_goto(const MCInst *MI, uint64_t Address, unsigned OpNo, raw_ostream &O) {
   const MCOperand &MO = MI->getOperand(OpNo);
   if (!MO.isImm()) {
     MAI.printExpr(O, *MO.getExpr());

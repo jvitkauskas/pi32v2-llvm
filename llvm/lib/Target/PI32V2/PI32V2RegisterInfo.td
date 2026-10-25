@@ -39,7 +39,7 @@ foreach I = 0-7 in
 def RETI  : PI32V2Reg<0, "reti">;
 def RETE  : PI32V2Reg<1, "rete">;
 def RETX  : PI32V2Reg<2, "retx">;
-def RETS  : PI32V2Reg<3, "rets">;
+def RETS  : PI32V2Reg<3, "rets">, DwarfRegNum<[17]>; // docs/ABI.md section 6.2
 def SR4   : PI32V2Reg<4, "sr4">;
 def PSR   : PI32V2Reg<5, "psr">;
 def CNUM  : PI32V2Reg<6, "cnum">;
@@ -50,7 +50,7 @@ def ICFGS : PI32V2Reg<10, "icfgs">;
 def ICFG  : PI32V2Reg<11, "icfg">;
 def USP   : PI32V2Reg<12, "usp">;
 def SSP   : PI32V2Reg<13, "ssp">;
-def SP    : PI32V2Reg<14, "sp">;
+def SP    : PI32V2Reg<14, "sp">, DwarfRegNum<[16]>;
 def PC    : PI32V2Reg<15, "pc">;
 
 def GPR : RegisterClass<"PI32V2", [i32], 32, (sequence "R%u", 0, 15)>;
