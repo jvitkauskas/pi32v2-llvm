@@ -26,7 +26,11 @@ define i32 @saves(i32 %a) nounwind {
 }
 
 ; CHECK-LABEL: brimm:
-; CHECK:      ifs (r0 > 4) goto
+; CHECK:      ifs (r0 <= 4) {
+; CHECK-NEXT: r0 = 1
+; CHECK-NEXT: rts
+; CHECK-NEXT: }
+; CHECK:      goto g
 define i32 @brimm(i32 %a) nounwind {
   %c = icmp slt i32 %a, 5
   br i1 %c, label %t, label %f
@@ -57,7 +61,7 @@ define i32 @fconv(i32 %a) nounwind {
 }
 
 ; CHECK-LABEL: fbr:
-; CHECK:      iff (r0 u>= r1) goto
+; CHECK:      iff (r0 < r1) {
 define i32 @fbr(float %a, float %b) nounwind {
   %c = fcmp olt float %a, %b
   br i1 %c, label %t, label %f
@@ -113,4 +117,33 @@ define i32 @big() nounwind {
   %p = getelementptr [2000 x i32], ptr %a, i32 0, i32 1500
   %v = load i32, ptr %p
   ret i32 %v
+}
+
+; A select is an if block: the false value first, then the true one under the
+; condition (no branch).
+; CHECK-LABEL: sel:
+; CHECK:      r2 = 0
+; CHECK-NEXT: ifs (r0 < r1) {
+; CHECK-NEXT: r2 = 1
+; CHECK-NEXT: }
+define i32 @sel(i32 %a, i32 %b) nounwind {
+  %c = icmp slt i32 %a, %b
+  %r = zext i1 %c to i32
+  %s = add i32 %r, %a
+  ret i32 %s
+}
+
+; Short conditional code is an if block too (if blocks pass).
+; CHECK-LABEL: cond:
+; CHECK:      if (r0 != 0) {
+; CHECK-NEXT: goto g
+; CHECK-NEXT: }
+define i32 @cond(i32 %a) nounwind {
+  %c = icmp eq i32 %a, 0
+  br i1 %c, label %z, label %n
+z:
+  ret i32 5
+n:
+  %r = tail call i32 @g(i32 %a)
+  ret i32 %r
 }

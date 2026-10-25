@@ -54,6 +54,11 @@ public:
                        const char *ExtraCode, raw_ostream &OS) override;
 
 private:
+  // The instructions still to come in the open if block's parts.
+  unsigned IfThen = 0, IfElse = 0;
+  void emitOne(const MachineInstr *MI);
+  void emitSelect(const MachineInstr *MI);
+  void closeIfBlock();
   MCOperand lowerSymbol(const MachineOperand &MO, MCSymbol *Sym) const;
   bool lowerOperand(const MachineOperand &MO, MCOperand &Out) const;
 };
@@ -131,10 +136,88 @@ bool PI32V2AsmPrinter::PrintAsmOperand(const MachineInstr *MI, unsigned OpNo,
   }
 }
 
+// An if block's closing lines in assembly text (an object needs none: the
+// opener holds the counts): after the then part "} else {" or "}", after the
+// else part "}".
+void PI32V2AsmPrinter::closeIfBlock() {
+  if (!IfThen && !IfElse)
+    return;
+  bool Text = OutStreamer->hasRawTextSupport();
+  if (IfThen) {
+    if (--IfThen)
+      return;
+    if (Text)
+      OutStreamer->emitRawText(IfElse ? "\t} else {" : "\t}");
+    return;
+  }
+  if (--IfElse == 0 && Text)
+    OutStreamer->emitRawText("\t}");
+}
+
 void PI32V2AsmPrinter::emitInstruction(const MachineInstr *MI) {
+  unsigned Opc = MI->getOpcode();
+  if (Opc == PI32V2::SELECT_CC || Opc == PI32V2::SELECT_CC_RI ||
+      Opc == PI32V2::SELECT_CC_RRI || Opc == PI32V2::SELECT_CC_RII) {
+    emitSelect(MI); // never inside another block
+    return;
+  }
+  emitOne(MI);
+  if (PI32V2::isIfOpener(MI->getOpcode())) {
+    IfThen = MI->getOperand(2).getImm();
+    IfElse = MI->getOperand(3).getImm();
+    return;
+  }
+  closeIfBlock();
+}
+
+// dst = f; if (a cc b) { dst = t }: the destination is f's register.
+void PI32V2AsmPrinter::emitSelect(const MachineInstr *MI) {
+  unsigned Opc = MI->getOpcode();
+  bool ImmB = Opc == PI32V2::SELECT_CC_RI || Opc == PI32V2::SELECT_CC_RII;
+  bool ImmT = Opc == PI32V2::SELECT_CC_RRI || Opc == PI32V2::SELECT_CC_RII;
+  Register Dst = MI->getOperand(0).getReg();
+  if (!ImmT && MI->getOperand(3).getReg() == Dst)
+    return; // both values in one register
+  unsigned Br = PI32V2::branchForCond(MI->getOperand(5).getImm());
+  if (ImmB)
+    Br = PI32V2::branchWithImm(Br);
+  MCInst If;
+  If.setOpcode(PI32V2::openerForBranch(Br));
+  If.addOperand(MCOperand::createReg(MI->getOperand(1).getReg()));
+  If.addOperand(ImmB ? MCOperand::createImm(MI->getOperand(2).getImm())
+                     : MCOperand::createReg(MI->getOperand(2).getReg()));
+  If.addOperand(MCOperand::createImm(1));
+  If.addOperand(MCOperand::createImm(0));
+  EmitToStreamer(*OutStreamer, If);
+  IfThen = 1;
+  IfElse = 0;
+  MCInst Set;
+  if (ImmT) {
+    Set.setOpcode(PI32V2::LI_S16);
+    Set.addOperand(MCOperand::createReg(Dst));
+    Set.addOperand(MCOperand::createImm(MI->getOperand(3).getImm()));
+  } else {
+    Set.setOpcode(PI32V2::MOV_RR);
+    Set.addOperand(MCOperand::createReg(Dst));
+    Set.addOperand(MCOperand::createReg(MI->getOperand(3).getReg()));
+  }
+  if (!NoCompress)
+    PI32V2::compressInst(Set, *MF->getSubtarget().getInstrInfo(),
+                         *OutContext.getRegisterInfo());
+  EmitToStreamer(*OutStreamer, Set);
+  closeIfBlock();
+}
+
+void PI32V2AsmPrinter::emitOne(const MachineInstr *MI) {
   MCInst Inst;
   unsigned Opc = MI->getOpcode();
   switch (Opc) {
+  case PI32V2::SELECT_CC:
+  case PI32V2::SELECT_CC_RI:
+  case PI32V2::SELECT_CC_RRI:
+  case PI32V2::SELECT_CC_RII:
+    emitSelect(MI);
+    return;
   case PI32V2::PseudoCALL:
     Opc = PI32V2::CALL_S;
     break;

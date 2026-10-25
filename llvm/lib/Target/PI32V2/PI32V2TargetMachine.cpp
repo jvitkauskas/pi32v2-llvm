@@ -81,6 +81,12 @@ public:
     addPass(createPI32V2ISelDag(getPI32V2TargetMachine(), getOptLevel()));
     return false;
   }
+
+  // if (...) { } blocks for short conditional code, on the final layout.
+  void addPreEmitPass2() override {
+    if (getOptLevel() != CodeGenOptLevel::None)
+      addPass(createPI32V2IfBlocksPass());
+  }
 };
 } // namespace
 

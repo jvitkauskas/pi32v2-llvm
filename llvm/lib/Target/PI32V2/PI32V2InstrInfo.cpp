@@ -287,6 +287,11 @@ unsigned PI32V2InstrInfo::getInstSizeInBytes(const MachineInstr &MI) const {
   case PI32V2::PseudoCALLR:
   case PI32V2::PseudoRET:
     return 2;
+  case PI32V2::SELECT_CC:
+  case PI32V2::SELECT_CC_RI:
+  case PI32V2::SELECT_CC_RRI:
+  case PI32V2::SELECT_CC_RII:
+    return 4 + 6; // the opener and a move or li
   default:
     return MI.getDesc().getSize();
   }

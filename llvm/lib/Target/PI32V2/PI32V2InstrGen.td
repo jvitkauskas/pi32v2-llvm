@@ -11101,6 +11101,8 @@ def LD_W_IDX : PI32V2Inst32<(outs GPR:$r), (ins GPR:$s, GPR:$t), "${r} = [${s}+$
   let Inst{2} = 0;
   let Inst{1} = 1;
   let Inst{0} = 0;
+  let hasSideEffects = 0;
+  let mayLoad = 1;
 }
 def LD_W_IDXS : PI32V2Inst32<(outs GPR:$r), (ins GPR:$s, GPR:$t), "${r} = [${s}+${t}<<2]"> {
   bits<4> r;
@@ -11138,6 +11140,8 @@ def LD_W_IDXS : PI32V2Inst32<(outs GPR:$r), (ins GPR:$s, GPR:$t), "${r} = [${s}+
   let Inst{2} = 0;
   let Inst{1} = 1;
   let Inst{0} = 0;
+  let hasSideEffects = 0;
+  let mayLoad = 1;
 }
 def ST_W_IDX : PI32V2Inst32<(outs ), (ins GPR:$r, GPR:$s, GPR:$t), "[${r}+${s}] = ${t}"> {
   bits<4> r;
@@ -11175,6 +11179,8 @@ def ST_W_IDX : PI32V2Inst32<(outs ), (ins GPR:$r, GPR:$s, GPR:$t), "[${r}+${s}] 
   let Inst{2} = 0;
   let Inst{1} = 1;
   let Inst{0} = 1;
+  let hasSideEffects = 0;
+  let mayStore = 1;
 }
 def ST_W_IDXS : PI32V2Inst32<(outs ), (ins GPR:$r, GPR:$s, GPR:$t), "[${r}+${s}<<2] = ${t}"> {
   bits<4> r;
@@ -11212,6 +11218,8 @@ def ST_W_IDXS : PI32V2Inst32<(outs ), (ins GPR:$r, GPR:$s, GPR:$t), "[${r}+${s}<
   let Inst{2} = 0;
   let Inst{1} = 1;
   let Inst{0} = 1;
+  let hasSideEffects = 0;
+  let mayStore = 1;
 }
 def LD_W_PRER : PI32V2Inst32<(outs GPR:$r), (ins GPR:$s, GPR:$t), "${r} = [++${s}=${t}]"> {
   bits<4> r;
@@ -11921,6 +11929,8 @@ def LD_HU_IDX : PI32V2Inst32<(outs GPR:$r), (ins GPR:$s, GPR:$t), "${r} = h[${s}
   let Inst{2} = 0;
   let Inst{1} = 0;
   let Inst{0} = 0;
+  let hasSideEffects = 0;
+  let mayLoad = 1;
 }
 def LD_HS_IDX : PI32V2Inst32<(outs GPR:$r), (ins GPR:$s, GPR:$t), "${r} = h[${s}+${t}] (s)"> {
   bits<4> r;
@@ -11958,6 +11968,8 @@ def LD_HS_IDX : PI32V2Inst32<(outs GPR:$r), (ins GPR:$s, GPR:$t), "${r} = h[${s}
   let Inst{2} = 0;
   let Inst{1} = 1;
   let Inst{0} = 0;
+  let hasSideEffects = 0;
+  let mayLoad = 1;
 }
 def LD_HU_IDXS : PI32V2Inst32<(outs GPR:$r), (ins GPR:$s, GPR:$t), "${r} = h[${s}+${t}<<1] (u)"> {
   bits<4> r;
@@ -11995,6 +12007,8 @@ def LD_HU_IDXS : PI32V2Inst32<(outs GPR:$r), (ins GPR:$s, GPR:$t), "${r} = h[${s
   let Inst{2} = 0;
   let Inst{1} = 0;
   let Inst{0} = 0;
+  let hasSideEffects = 0;
+  let mayLoad = 1;
 }
 def LD_HS_IDXS : PI32V2Inst32<(outs GPR:$r), (ins GPR:$s, GPR:$t), "${r} = h[${s}+${t}<<1] (s)"> {
   bits<4> r;
@@ -12032,6 +12046,8 @@ def LD_HS_IDXS : PI32V2Inst32<(outs GPR:$r), (ins GPR:$s, GPR:$t), "${r} = h[${s
   let Inst{2} = 0;
   let Inst{1} = 1;
   let Inst{0} = 0;
+  let hasSideEffects = 0;
+  let mayLoad = 1;
 }
 def ST_H_IDX : PI32V2Inst32<(outs ), (ins GPR:$r, GPR:$s, GPR:$t), "h[${r}+${s}] = ${t}"> {
   bits<4> r;
@@ -12069,6 +12085,8 @@ def ST_H_IDX : PI32V2Inst32<(outs ), (ins GPR:$r, GPR:$s, GPR:$t), "h[${r}+${s}]
   let Inst{2} = 0;
   let Inst{1} = 0;
   let Inst{0} = 1;
+  let hasSideEffects = 0;
+  let mayStore = 1;
 }
 def ST_H_HI_IDX : PI32V2Inst32<(outs ), (ins GPR:$r, GPR:$s, GPR:$t), "h[${r}+${s}] = ${t}.h"> {
   bits<4> r;
@@ -12143,6 +12161,8 @@ def ST_H_IDXS : PI32V2Inst32<(outs ), (ins GPR:$r, GPR:$s, GPR:$t), "h[${r}+${s}
   let Inst{2} = 0;
   let Inst{1} = 0;
   let Inst{0} = 1;
+  let hasSideEffects = 0;
+  let mayStore = 1;
 }
 def ST_H_HI_IDXS : PI32V2Inst32<(outs ), (ins GPR:$r, GPR:$s, GPR:$t), "h[${r}+${s}<<1] = ${t}.h"> {
   bits<4> r;
@@ -12852,6 +12872,8 @@ def LD_BU_IDX : PI32V2Inst32<(outs GPR:$r), (ins GPR:$s, GPR:$t), "${r} = b[${s}
   let Inst{2} = 0;
   let Inst{1} = 0;
   let Inst{0} = 0;
+  let hasSideEffects = 0;
+  let mayLoad = 1;
 }
 def LD_BS_IDX : PI32V2Inst32<(outs GPR:$r), (ins GPR:$s, GPR:$t), "${r} = b[${s}+${t}] (s)"> {
   bits<4> r;
@@ -12889,6 +12911,8 @@ def LD_BS_IDX : PI32V2Inst32<(outs GPR:$r), (ins GPR:$s, GPR:$t), "${r} = b[${s}
   let Inst{2} = 0;
   let Inst{1} = 1;
   let Inst{0} = 0;
+  let hasSideEffects = 0;
+  let mayLoad = 1;
 }
 def ST_B_IDX : PI32V2Inst32<(outs ), (ins GPR:$r, GPR:$s, GPR:$t), "b[${r}+${s}] = ${t}"> {
   bits<4> r;
@@ -12926,6 +12950,8 @@ def ST_B_IDX : PI32V2Inst32<(outs ), (ins GPR:$r, GPR:$s, GPR:$t), "b[${r}+${s}]
   let Inst{2} = 0;
   let Inst{1} = 0;
   let Inst{0} = 1;
+  let hasSideEffects = 0;
+  let mayStore = 1;
 }
 def LD_BU_PRER : PI32V2Inst32<(outs GPR:$r), (ins GPR:$s, GPR:$t), "${r} = b[++${s}=${t}] (u)"> {
   bits<4> r;
