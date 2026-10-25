@@ -37,6 +37,16 @@ bool PI32V2FrameLowering::hasFPImpl(const MachineFunction &MF) const {
   return MFI.hasVarSizedObjects() || MFI.isFrameAddressTaken();
 }
 
+// r7 is callee-saved (docs/ABI.md section 4): a function that makes it its
+// frame base saves it like any other.
+void PI32V2FrameLowering::determineCalleeSaves(MachineFunction &MF,
+                                               BitVector &SavedRegs,
+                                               RegScavenger *RS) const {
+  TargetFrameLowering::determineCalleeSaves(MF, SavedRegs, RS);
+  if (hasFP(MF))
+    SavedRegs.set(PI32V2::R7);
+}
+
 bool PI32V2FrameLowering::hasReservedCallFrame(const MachineFunction &MF) const {
   return !MF.getFrameInfo().hasVarSizedObjects();
 }
@@ -44,6 +54,14 @@ bool PI32V2FrameLowering::hasReservedCallFrame(const MachineFunction &MF) const 
 static unsigned savedBytes(const MachineFunction &MF) {
   return 4 * MF.getFrameInfo().getCalleeSavedInfo().size();
 }
+
+static bool isInterrupt(const MachineFunction &MF) {
+  return MF.getFunction().hasFnAttribute("interrupt");
+}
+
+// An interrupt handler's {psr, reti} (special registers 5 and 0), pushed
+// first and popped last, as JieLi's compiler does (docs/ABI.md section 7.1).
+static constexpr unsigned InterruptSRMask = (1u << 5) | (1u << 0);
 
 static unsigned varArgsBytes(const MachineFunction &MF) {
   return MF.getInfo<PI32V2MachineFunctionInfo>()->getVarArgsSaveSize();
@@ -80,6 +98,10 @@ void PI32V2FrameLowering::emitPrologue(MachineFunction &MF,
       B.addReg(PI32V2::R0 + R, RegState::Implicit);
     (void)VA;
   }
+  if (isInterrupt(MF))
+    BuildMI(MBB, MBB.begin(), DL, TII.get(PI32V2::PUSH_SRL))
+        .addImm(InterruptSRMask)
+        .setMIFlag(MachineInstr::FrameSetup);
   // After the push of the saved registers.
   while (I != MBB.end() && I->getFlag(MachineInstr::FrameSetup))
     ++I;
@@ -112,6 +134,10 @@ void PI32V2FrameLowering::emitEpilogue(MachineFunction &MF,
   if (unsigned VA = varArgsBytes(MF))
     adjustSP(MBB, MBB.getFirstTerminator(), DL, TII, VA,
              MachineInstr::FrameDestroy);
+  if (isInterrupt(MF))
+    BuildMI(MBB, MBB.getFirstTerminator(), DL, TII.get(PI32V2::POP_SRL))
+        .addImm(InterruptSRMask)
+        .setMIFlag(MachineInstr::FrameDestroy);
 }
 
 MachineBasicBlock::iterator PI32V2FrameLowering::eliminateCallFramePseudoInstr(
@@ -176,7 +202,8 @@ bool PI32V2FrameLowering::restoreCalleeSavedRegisters(
   // A variadic function releases its pushed argument registers after the
   // pop, so its pop does not return.
   bool IsReturn = MI != MBB.end() && MI->getOpcode() == PI32V2::PseudoRET &&
-                  !varArgsBytes(*MBB.getParent());
+                  !varArgsBytes(*MBB.getParent()) &&
+                  !isInterrupt(*MBB.getParent()); // a handler returns with rti
   if (Rets && IsReturn) {
     // {pc, ...} = [sp++]: restores and returns; the return's uses move to it.
     auto B = BuildMI(MBB, MI, DL, TII.get(PI32V2::POP_PC_RMASK))

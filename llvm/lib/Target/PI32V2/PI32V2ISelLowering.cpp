@@ -43,7 +43,17 @@ PI32V2TargetLowering::PI32V2TargetLowering(const TargetMachine &TM,
   setBooleanContents(ZeroOrOneBooleanContent);
   setMinFunctionAlignment(Align(2));
   setPrefFunctionAlignment(Align(2));
-  setMaxAtomicSizeInBitsSupported(0);
+  // Atomics: read-modify-write operations are __sync_* calls, as JieLi's
+  // compiler makes them (the runtime provides them); an aligned load or store
+  // of up to a word is one access; a fence is csync.
+  setMaxAtomicSizeInBitsSupported(32);
+  for (MVT VT : {MVT::i8, MVT::i16, MVT::i32})
+    for (unsigned Op :
+         {ISD::ATOMIC_CMP_SWAP, ISD::ATOMIC_SWAP, ISD::ATOMIC_LOAD_ADD,
+          ISD::ATOMIC_LOAD_SUB, ISD::ATOMIC_LOAD_AND, ISD::ATOMIC_LOAD_OR,
+          ISD::ATOMIC_LOAD_XOR, ISD::ATOMIC_LOAD_NAND, ISD::ATOMIC_LOAD_MIN,
+          ISD::ATOMIC_LOAD_MAX, ISD::ATOMIC_LOAD_UMIN, ISD::ATOMIC_LOAD_UMAX})
+      setOperationAction(Op, VT, LibCall);
 
   for (unsigned Op : {ISD::GlobalAddress, ISD::ExternalSymbol,
                       ISD::BlockAddress, ISD::JumpTable, ISD::ConstantPool})
@@ -326,6 +336,15 @@ SDValue PI32V2TargetLowering::LowerReturn(
   if (Glue)
     Ops.push_back(Glue);
   return DAG.getNode(PI32V2ISD::RET, DL, MVT::Other, Ops);
+}
+
+std::pair<unsigned, const TargetRegisterClass *>
+PI32V2TargetLowering::getRegForInlineAsmConstraint(const TargetRegisterInfo *TRI,
+                                                   StringRef Constraint,
+                                                   MVT VT) const {
+  if (Constraint.size() == 1 && Constraint[0] == 'r')
+    return std::make_pair(0U, &PI32V2::GPRRegClass);
+  return TargetLowering::getRegForInlineAsmConstraint(TRI, Constraint, VT);
 }
 
 // ---- select -----------------------------------------------------------------

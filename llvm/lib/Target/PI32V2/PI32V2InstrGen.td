@@ -1497,6 +1497,9 @@ def POP_SRL : PI32V2Inst16<(outs ), (ins Opsrmask_6:$m), "\\{${m}\\} = [sp++]"> 
   let Inst{2} = m{2};
   let Inst{1} = m{1};
   let Inst{0} = m{0};
+  let mayLoad = 1;
+  let Uses = [SP];
+  let Defs = [SP, PSR, RETI];
 }
 def PUSH_SRL : PI32V2Inst16<(outs ), (ins Opsrmask_6:$m), "[--sp] = \\{${m}\\}"> {
   bits<6> m;
@@ -1516,6 +1519,9 @@ def PUSH_SRL : PI32V2Inst16<(outs ), (ins Opsrmask_6:$m), "[--sp] = \\{${m}\\}">
   let Inst{2} = m{2};
   let Inst{1} = m{1};
   let Inst{0} = m{0};
+  let mayStore = 1;
+  let Uses = [SP, PSR, RETI];
+  let Defs = [SP];
 }
 def PUSH_RMASK : PI32V2Inst32<(outs ), (ins Oprmask_E:$m), "[--sp] = \\{${m}\\}"> {
   bits<16> m;

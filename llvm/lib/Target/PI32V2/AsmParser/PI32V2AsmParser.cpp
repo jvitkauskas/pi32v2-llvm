@@ -850,13 +850,21 @@ bool PI32V2AsmParser::parseInstruction(ParseInstructionInfo &Info,
     getParser().Lex();
   const char *End = getLexer().getLoc().getPointer();
   StringRef Raw(Begin, End - Begin);
-  // A comment the lexer has not removed.
-  for (StringRef C : {";", "//"}) {
-    size_t P = Raw.find(C);
-    if (P != StringRef::npos)
-      Raw = Raw.substr(0, P);
+  // Comments the lexer skipped as tokens but are still in the text: /* ... */
+  // becomes a space, ; and // end the line.
+  std::string Text;
+  for (size_t I = 0; I < Raw.size();) {
+    if (Raw.substr(I).starts_with("/*")) {
+      size_t E = Raw.find("*/", I + 2);
+      I = E == StringRef::npos ? Raw.size() : E + 2;
+      Text += ' ';
+    } else if (Raw[I] == ';' || Raw.substr(I).starts_with("//")) {
+      break;
+    } else {
+      Text += Raw[I++];
+    }
   }
-  std::string Line = canonical(Raw);
+  std::string Line = canonical(Text);
   Operands.push_back(std::make_unique<PI32V2Operand>(NameLoc));
   MCContext &Ctx = getContext();
 

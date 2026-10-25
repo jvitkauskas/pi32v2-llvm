@@ -66,6 +66,16 @@ class PI32V2TargetCodeGenInfo : public TargetCodeGenInfo {
 public:
   PI32V2TargetCodeGenInfo(CodeGen::CodeGenTypes &CGT)
       : TargetCodeGenInfo(std::make_unique<PI32V2ABIInfo>(CGT)) {}
+
+  // __attribute__((interrupt)): the backend's "interrupt" function attribute.
+  void setTargetAttributes(const Decl *D, llvm::GlobalValue *GV,
+                           CodeGen::CodeGenModule &CGM) const override {
+    if (GV->isDeclaration())
+      return;
+    const auto *FD = dyn_cast_or_null<FunctionDecl>(D);
+    if (FD && FD->hasAttr<PI32V2InterruptAttr>())
+      cast<llvm::Function>(GV)->addFnAttr("interrupt");
+  }
 };
 } // namespace
 

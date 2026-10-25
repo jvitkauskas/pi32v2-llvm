@@ -176,3 +176,14 @@ defm : BrCC<SETGT, BGTS_RR>;
 defm : BrCC<SETLE, BLES_RR>;
 def : Pat<(br bb:$t), (GOTO_S bb:$t)>;
 def : Pat<(brind GPR:$a), (GOTO_R GPR:$a)>;
+
+// Atomic loads and stores of up to a word are single accesses; a fence is csync.
+def : Pat<(i32 (atomic_load_32 (AddrW GPR:$b, i32:$n))), (LD_W_L GPR:$b, $n)>;
+def : Pat<(i32 (atomic_load_zext_16 (AddrH GPR:$b, i32:$n))), (LD_HU_L GPR:$b, $n)>;
+def : Pat<(i32 (atomic_load_zext_8 (AddrB GPR:$b, i32:$n))), (LD_BU_L GPR:$b, $n)>;
+def : Pat<(i32 (atomic_load_32 (AddrFI i32:$fi, i32:$off))), (LDW_FI $fi, $off)>;
+def : Pat<(atomic_store_32 GPR:$v, (AddrW GPR:$b, i32:$n)), (ST_W_L GPR:$b, $n, GPR:$v)>;
+def : Pat<(atomic_store_16 GPR:$v, (AddrH GPR:$b, i32:$n)), (ST_H_L GPR:$b, $n, GPR:$v)>;
+def : Pat<(atomic_store_8 GPR:$v, (AddrB GPR:$b, i32:$n)), (ST_B_L GPR:$b, $n, GPR:$v)>;
+def : Pat<(atomic_store_32 GPR:$v, (AddrFI i32:$fi, i32:$off)), (STW_FI GPR:$v, $fi, $off)>;
+def : Pat<(atomic_fence timm, timm), (CSYNC)>;

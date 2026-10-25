@@ -485,6 +485,7 @@ def TargetLoongArch : TargetArch<["loongarch32", "loongarch64"]>;
 def TargetMips32 : TargetArch<["mips", "mipsel"]>;
 def TargetAnyMips : TargetArch<["mips", "mipsel", "mips64", "mips64el"]>;
 def TargetMSP430 : TargetArch<["msp430"]>;
+def TargetPI32V2 : TargetArch<["pi32v2"]>;
 def TargetM68k : TargetArch<["m68k"]>;
 def TargetRISCV : TargetArch<["riscv32", "riscv64", "riscv32be", "riscv64be"]>;
 def TargetX86 : TargetArch<["x86"]>;
@@ -2223,6 +2224,16 @@ def MSP430Interrupt : InheritableAttr, TargetSpecificAttr<TargetMSP430> {
   let Args = [UnsignedArgument<"Number">];
   let ParseKind = "Interrupt";
   let HasCustomParsing = 1;
+  let Documentation = [Undocumented];
+}
+
+// JieLi's pi32v2: interrupt or interrupt("") (the AC79 SDK's spelling); the
+// function saves what it changes, psr, rets and reti, and returns with rti.
+def PI32V2Interrupt : InheritableAttr, TargetSpecificAttr<TargetPI32V2> {
+  let Spellings = [GCC<"interrupt">];
+  let Args = [StringArgument<"Kind", /*opt=*/1>];
+  let Subjects = SubjectList<[Function]>;
+  let ParseKind = "Interrupt";
   let Documentation = [Undocumented];
 }
 

@@ -41,7 +41,7 @@ public:
     IntPtrType = SignedLong;
     WCharType = SignedInt;
     MaxAtomicPromoteWidth = 32;
-    MaxAtomicInlineWidth = 0; // atomics are library calls for now
+    MaxAtomicInlineWidth = 32; // as JieLi's compiler (read-modify-write ones are __sync_* calls)
   }
 
   void getTargetDefines(const LangOptions &Opts,

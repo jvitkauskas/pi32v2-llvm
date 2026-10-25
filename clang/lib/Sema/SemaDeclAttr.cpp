@@ -6665,6 +6665,13 @@ BTFDeclTagAttr *Sema::mergeBTFDeclTagAttr(Decl *D, const BTFDeclTagAttr &AL) {
 static void handleInterruptAttr(Sema &S, Decl *D, const ParsedAttr &AL) {
   // Dispatch the interrupt attribute based on the current target.
   switch (S.Context.getTargetInfo().getTriple().getArch()) {
+  case llvm::Triple::pi32v2: {
+    StringRef Kind;
+    if (AL.getNumArgs() && !S.checkStringLiteralArgumentAttr(AL, 0, Kind))
+      return;
+    D->addAttr(::new (S.Context) PI32V2InterruptAttr(S.Context, AL, Kind));
+    break;
+  }
   case llvm::Triple::msp430:
     S.MSP430().handleInterruptAttr(D, AL);
     break;
