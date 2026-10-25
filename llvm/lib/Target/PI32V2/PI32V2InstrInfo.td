@@ -95,6 +95,17 @@ def STH_FI : PI32V2Pseudo<(outs), (ins GPR:$r, i32imm_op:$fi, i32imm_op:$off)>;
 }
 def ADDR_FI : PI32V2Pseudo<(outs GPR:$r), (ins i32imm_op:$fi, i32imm_op:$off)>;
 
+// Post-increment loads and stores: the access at the base register, then the
+// base plus the step, a multiple of the access size in 9 bits
+// (PI32V2DAGToDAGISel; PI32V2AsmPrinter emits the .pin.l forms, the assembler
+// backend the 16-bit ones when they fit).
+let mayLoad = 1, Constraints = "$b = $b_wb" in
+foreach N = ["LDW", "LDHU", "LDHS", "LDBU", "LDBS"] in
+def N # _POST : PI32V2Pseudo<(outs GPR:$r, GPR:$b_wb), (ins GPR:$b, i32imm_op:$n)>;
+let mayStore = 1, Constraints = "$b = $b_wb" in
+foreach N = ["STW", "STH", "STB"] in
+def N # _POST : PI32V2Pseudo<(outs GPR:$b_wb), (ins GPR:$b, i32imm_op:$n, GPR:$v)>;
+
 // select: dst = f; if (a cc b) { dst = t }, the destination being f's
 // register (PI32V2AsmPrinter emits the block). b and t may be constants.
 let Constraints = "$f = $dst" in {

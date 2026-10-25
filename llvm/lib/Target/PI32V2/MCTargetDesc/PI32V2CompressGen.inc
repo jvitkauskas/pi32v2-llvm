@@ -79,10 +79,16 @@ static const PI32V2CompressRule CompressRules[] = {
     {PI32V2::BNE_RR_L, PI32V2::BNE_RR, 0, 1, -1, 0, 3, {0, 1, 2}},
     {PI32V2::LD_BU_L, PI32V2::LD_BU, -1, -1, -1, 0, 3, {0, 1, 2}},
     {PI32V2::LD_BU_L, PI32V2::LD_BU, 0, 1, -1, 0, 3, {0, 1, 2}},
+    {PI32V2::LD_BU_PIN_L, PI32V2::LD_BU_PIN, -1, -1, -1, 0, 3, {0, 1, 2}},
+    {PI32V2::LD_BU_PIN_L, PI32V2::LD_BU_PIN, 0, 1, -1, 0, 3, {0, 1, 2}},
     {PI32V2::LD_HU_L, PI32V2::LD_HU, -1, -1, -1, 0, 3, {0, 1, 2}},
     {PI32V2::LD_HU_L, PI32V2::LD_HU, 0, 1, -1, 0, 3, {0, 1, 2}},
+    {PI32V2::LD_HU_PIN_L, PI32V2::LD_HU_PIN, -1, -1, -1, 0, 3, {0, 1, 2}},
+    {PI32V2::LD_HU_PIN_L, PI32V2::LD_HU_PIN, 0, 1, -1, 0, 3, {0, 1, 2}},
     {PI32V2::LD_W_L, PI32V2::LD_W, -1, -1, -1, 0, 3, {0, 1, 2}},
     {PI32V2::LD_W_L, PI32V2::LD_W, 0, 1, -1, 0, 3, {0, 1, 2}},
+    {PI32V2::LD_W_PIN_L, PI32V2::LD_W_PIN, -1, -1, -1, 0, 3, {0, 1, 2}},
+    {PI32V2::LD_W_PIN_L, PI32V2::LD_W_PIN, 0, 1, -1, 0, 3, {0, 1, 2}},
     {PI32V2::LD_W_SP_L, PI32V2::LD_W_SP, -1, -1, -1, 0, 2, {0, 1}},
     {PI32V2::LI_MODIMM, PI32V2::LI_U8, -1, -1, -1, 0, 2, {0, 1}},
     {PI32V2::LI_S16, PI32V2::LI_U8, -1, -1, -1, 0, 2, {0, 1}},
@@ -103,10 +109,16 @@ static const PI32V2CompressRule CompressRules[] = {
     {PI32V2::OR_RRR, PI32V2::OR_RR, 0, 2, -1, 0, 3, {0, 0, 1}},
     {PI32V2::ST_B_L, PI32V2::ST_B, -1, -1, -1, 0, 3, {0, 1, 2}},
     {PI32V2::ST_B_L, PI32V2::ST_B, 0, 2, -1, 0, 3, {0, 1, 2}},
+    {PI32V2::ST_B_PIN_L, PI32V2::ST_B_PIN, -1, -1, -1, 0, 3, {0, 1, 2}},
+    {PI32V2::ST_B_PIN_L, PI32V2::ST_B_PIN, 0, 2, -1, 0, 3, {0, 1, 2}},
     {PI32V2::ST_H_L, PI32V2::ST_H, -1, -1, -1, 0, 3, {0, 1, 2}},
     {PI32V2::ST_H_L, PI32V2::ST_H, 0, 2, -1, 0, 3, {0, 1, 2}},
+    {PI32V2::ST_H_PIN_L, PI32V2::ST_H_PIN, -1, -1, -1, 0, 3, {0, 1, 2}},
+    {PI32V2::ST_H_PIN_L, PI32V2::ST_H_PIN, 0, 2, -1, 0, 3, {0, 1, 2}},
     {PI32V2::ST_W_L, PI32V2::ST_W, -1, -1, -1, 0, 3, {0, 1, 2}},
     {PI32V2::ST_W_L, PI32V2::ST_W, 0, 2, -1, 0, 3, {0, 1, 2}},
+    {PI32V2::ST_W_PIN_L, PI32V2::ST_W_PIN, -1, -1, -1, 0, 3, {0, 1, 2}},
+    {PI32V2::ST_W_PIN_L, PI32V2::ST_W_PIN, 0, 2, -1, 0, 3, {0, 1, 2}},
     {PI32V2::ST_W_SP_L, PI32V2::ST_W_SP, -1, -1, -1, 0, 2, {0, 1}},
     {PI32V2::SUB_MODIMM_RRI, PI32V2::ADD_RI_NEG7, 0, 1, -1, 0, 3, {0, 0, 2}},
     {PI32V2::SUB_MODIMM_RRI, PI32V2::ADD_RRI, -1, -1, -1, 0, 3, {0, 1, 2}},
@@ -188,13 +200,25 @@ static bool immFits(unsigned Opc, unsigned OpNo, int64_t V) {
     if (OpNo == 2)
       return fitsNum(V, 1, 5, 1, 0, 0, 0);
     return true;
+  case PI32V2::LD_BU_PIN:
+    if (OpNo == 2)
+      return fitsNum(V, 0, 1, -2, 1, 0, 0);
+    return true;
   case PI32V2::LD_HU:
     if (OpNo == 2)
       return fitsNum(V, 1, 5, 2, 0, 0, 0);
     return true;
+  case PI32V2::LD_HU_PIN:
+    if (OpNo == 2)
+      return fitsNum(V, 0, 1, -4, 2, 0, 0);
+    return true;
   case PI32V2::LD_W:
     if (OpNo == 2)
       return fitsNum(V, 1, 5, 4, 0, 0, 0);
+    return true;
+  case PI32V2::LD_W_PIN:
+    if (OpNo == 2)
+      return fitsNum(V, 0, 1, -8, 4, 0, 0);
     return true;
   case PI32V2::LD_W_SP:
     if (OpNo == 1)
@@ -224,13 +248,25 @@ static bool immFits(unsigned Opc, unsigned OpNo, int64_t V) {
     if (OpNo == 1)
       return fitsNum(V, 1, 5, 1, 0, 0, 0);
     return true;
+  case PI32V2::ST_B_PIN:
+    if (OpNo == 1)
+      return fitsNum(V, 0, 1, -2, 1, 0, 0);
+    return true;
   case PI32V2::ST_H:
     if (OpNo == 1)
       return fitsNum(V, 1, 5, 2, 0, 0, 0);
     return true;
+  case PI32V2::ST_H_PIN:
+    if (OpNo == 1)
+      return fitsNum(V, 0, 1, -4, 2, 0, 0);
+    return true;
   case PI32V2::ST_W:
     if (OpNo == 1)
       return fitsNum(V, 1, 5, 4, 0, 0, 0);
+    return true;
+  case PI32V2::ST_W_PIN:
+    if (OpNo == 1)
+      return fitsNum(V, 0, 1, -8, 4, 0, 0);
     return true;
   case PI32V2::ST_W_SP:
     if (OpNo == 0)

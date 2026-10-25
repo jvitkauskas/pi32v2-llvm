@@ -21,6 +21,10 @@ class PI32V2TargetLowering : public TargetLowering {
   const PI32V2Subtarget &Subtarget;
 
 public:
+  // Post-increment accesses ([b++=n], n a multiple of the access size).
+  bool getPostIndexedAddressParts(SDNode *N, SDNode *Op, SDValue &Base,
+                                  SDValue &Offset, ISD::MemIndexedMode &AM,
+                                  SelectionDAG &DAG) const override;
   // clz is one instruction, defined for 0 (32): no test around it.
   bool isCheapToSpeculateCtlz(Type *Ty) const override { return true; }
   bool isCheapToSpeculateCttz(Type *Ty) const override { return true; }

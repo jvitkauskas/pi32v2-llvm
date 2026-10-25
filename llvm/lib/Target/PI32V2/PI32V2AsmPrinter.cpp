@@ -208,9 +208,43 @@ void PI32V2AsmPrinter::emitSelect(const MachineInstr *MI) {
   closeIfBlock();
 }
 
+// A post-increment pseudo's form; its written-back base operand is not one of
+// the form's (the form says [b++=n]).
+static unsigned postForm(unsigned Opc, unsigned &Skip) {
+  Skip = 1;
+  switch (Opc) {
+  case PI32V2::LDW_POST: return PI32V2::LD_W_PIN_L;
+  case PI32V2::LDHU_POST: return PI32V2::LD_HU_PIN_L;
+  case PI32V2::LDHS_POST: return PI32V2::LD_HS_PIN_L;
+  case PI32V2::LDBU_POST: return PI32V2::LD_BU_PIN_L;
+  case PI32V2::LDBS_POST: return PI32V2::LD_BS_PIN_L;
+  }
+  Skip = 0;
+  switch (Opc) {
+  case PI32V2::STW_POST: return PI32V2::ST_W_PIN_L;
+  case PI32V2::STH_POST: return PI32V2::ST_H_PIN_L;
+  case PI32V2::STB_POST: return PI32V2::ST_B_PIN_L;
+  }
+  return 0;
+}
+
 void PI32V2AsmPrinter::emitOne(const MachineInstr *MI) {
   MCInst Inst;
   unsigned Opc = MI->getOpcode();
+  unsigned Skip;
+  if (unsigned Form = postForm(Opc, Skip)) {
+    Inst.setOpcode(Form);
+    for (unsigned K = 0; K < MI->getNumOperands(); ++K) {
+      MCOperand Op;
+      if (K != Skip && lowerOperand(MI->getOperand(K), Op))
+        Inst.addOperand(Op);
+    }
+    if (!NoCompress)
+      PI32V2::compressInst(Inst, *MF->getSubtarget().getInstrInfo(),
+                           *OutContext.getRegisterInfo());
+    EmitToStreamer(*OutStreamer, Inst);
+    return;
+  }
   switch (Opc) {
   case PI32V2::SELECT_CC:
   case PI32V2::SELECT_CC_RI:

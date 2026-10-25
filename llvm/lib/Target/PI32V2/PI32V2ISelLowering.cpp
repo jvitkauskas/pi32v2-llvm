@@ -84,6 +84,14 @@ PI32V2TargetLowering::PI32V2TargetLowering(const TargetMachine &TM,
                       ISD::UMUL_LOHI, ISD::SMUL_LOHI, ISD::SMIN, ISD::SMAX,
                       ISD::UMIN, ISD::UMAX})
     setOperationAction(Op, MVT::i32, Legal);
+  for (MVT VT : {MVT::i8, MVT::i16, MVT::i32}) {
+    setIndexedLoadAction(ISD::POST_INC, VT, Legal);
+    setIndexedStoreAction(ISD::POST_INC, VT, Legal);
+  }
+  if (STI.hasFPRev1()) {
+    setIndexedLoadAction(ISD::POST_INC, MVT::f32, Legal);
+    setIndexedStoreAction(ISD::POST_INC, MVT::f32, Legal);
+  }
   setOperationAction(ISD::VASTART, MVT::Other, Custom);
   setOperationAction(ISD::RETURNADDR, MVT::i32, Custom);
   setOperationAction(ISD::FRAMEADDR, MVT::i32, Custom);
@@ -265,6 +273,31 @@ SDValue PI32V2TargetLowering::LowerFormalArguments(
     }
   }
   return Chain;
+}
+
+bool PI32V2TargetLowering::getPostIndexedAddressParts(
+    SDNode *N, SDNode *Op, SDValue &Base, SDValue &Offset,
+    ISD::MemIndexedMode &AM, SelectionDAG &DAG) const {
+  EVT VT;
+  if (auto *LD = dyn_cast<LoadSDNode>(N))
+    VT = LD->getMemoryVT();
+  else if (auto *ST = dyn_cast<StoreSDNode>(N))
+    VT = ST->getMemoryVT();
+  else
+    return false;
+  if (Op->getOpcode() != ISD::ADD || !VT.isSimple())
+    return false;
+  auto *C = dyn_cast<ConstantSDNode>(Op->getOperand(1));
+  int64_t Size = VT.getStoreSize();
+  if (!C || (Size != 1 && Size != 2 && Size != 4))
+    return false;
+  int64_t Step = C->getSExtValue();
+  if (Step % Size || !isInt<9>(Step / Size))
+    return false;
+  Base = Op->getOperand(0);
+  Offset = Op->getOperand(1);
+  AM = ISD::POST_INC;
+  return true;
 }
 
 EVT PI32V2TargetLowering::getOptimalMemOpType(

@@ -287,6 +287,10 @@ unsigned PI32V2InstrInfo::getInstSizeInBytes(const MachineInstr &MI) const {
   case PI32V2::PseudoCALLR:
   case PI32V2::PseudoRET:
     return 2;
+  case PI32V2::LDW_POST: case PI32V2::LDHU_POST: case PI32V2::LDHS_POST:
+  case PI32V2::LDBU_POST: case PI32V2::LDBS_POST: case PI32V2::STW_POST:
+  case PI32V2::STH_POST: case PI32V2::STB_POST:
+    return 4; // the .pin.l form at most
   case PI32V2::SELECT_CC:
   case PI32V2::SELECT_CC_RI:
   case PI32V2::SELECT_CC_RRI:
