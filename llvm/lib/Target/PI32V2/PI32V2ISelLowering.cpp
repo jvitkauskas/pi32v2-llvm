@@ -16,6 +16,7 @@
 #include "PI32V2ISelLowering.h"
 #include "MCTargetDesc/PI32V2MCTargetDesc.h"
 #include "PI32V2InstrInfo.h"
+#include "PI32V2MachineFunctionInfo.h"
 #include "PI32V2Subtarget.h"
 #include "llvm/CodeGen/CallingConvLower.h"
 #include "llvm/CodeGen/MachineFrameInfo.h"
@@ -60,9 +61,11 @@ PI32V2TargetLowering::PI32V2TargetLowering(const TargetMachine &TM,
         ISD::MULHU, ISD::SMUL_LOHI, ISD::UMUL_LOHI, ISD::ROTL, ISD::ROTR,
         ISD::CTPOP, ISD::CTLZ, ISD::CTTZ, ISD::BSWAP, ISD::SHL_PARTS,
         ISD::SRA_PARTS, ISD::SRL_PARTS, ISD::DYNAMIC_STACKALLOC,
-        ISD::STACKSAVE, ISD::STACKRESTORE, ISD::VAARG, ISD::VACOPY,
-        ISD::VAEND})
+        ISD::STACKSAVE, ISD::STACKRESTORE})
     setOperationAction(Op, MVT::i32, Expand);
+  setOperationAction(ISD::VASTART, MVT::Other, Custom);
+  for (unsigned Op : {ISD::VAARG, ISD::VACOPY, ISD::VAEND})
+    setOperationAction(Op, MVT::Other, Expand);
   setOperationAction(ISD::DYNAMIC_STACKALLOC, MVT::i32, Expand);
   setOperationAction(ISD::STACKSAVE, MVT::Other, Expand);
   setOperationAction(ISD::STACKRESTORE, MVT::Other, Expand);
@@ -83,6 +86,16 @@ SDValue PI32V2TargetLowering::LowerOperation(SDValue Op,
     return lowerAddress(Op, DAG);
   case ISD::SELECT_CC:
     return lowerSelectCC(Op, DAG);
+  case ISD::VASTART: {
+    // va_list is a pointer to the first unnamed word.
+    MachineFunction &MF = DAG.getMachineFunction();
+    auto *FI = MF.getInfo<PI32V2MachineFunctionInfo>();
+    SDLoc DL(Op);
+    SDValue Addr = DAG.getFrameIndex(FI->getVarArgsFrameIndex(), MVT::i32);
+    const Value *SV = cast<SrcValueSDNode>(Op.getOperand(2))->getValue();
+    return DAG.getStore(Op.getOperand(0), DL, Addr, Op.getOperand(1),
+                        MachinePointerInfo(SV));
+  }
   default:
     report_fatal_error("PI32V2: unexpected operation to lower");
   }
@@ -128,8 +141,6 @@ SDValue PI32V2TargetLowering::LowerFormalArguments(
     SDValue Chain, CallingConv::ID CallConv, bool IsVarArg,
     const SmallVectorImpl<ISD::InputArg> &Ins, const SDLoc &DL,
     SelectionDAG &DAG, SmallVectorImpl<SDValue> &InVals) const {
-  if (IsVarArg)
-    report_fatal_error("PI32V2: variadic functions are not supported yet");
   MachineFunction &MF = DAG.getMachineFunction();
   MachineFrameInfo &MFI = MF.getFrameInfo();
   MachineRegisterInfo &RegInfo = MF.getRegInfo();
@@ -157,6 +168,26 @@ SDValue PI32V2TargetLowering::LowerFormalArguments(
       V = DAG.getNode(ISD::TRUNCATE, DL, VA.getValVT(), V);
     InVals.push_back(V);
   }
+
+  if (IsVarArg) {
+    // The unused argument registers are pushed just below the incoming sp
+    // (PI32V2FrameLowering::emitPrologue); the first unnamed word is the
+    // first of them, or the first stack word after the named ones.
+    auto *FI = MF.getInfo<PI32V2MachineFunctionInfo>();
+    static const MCPhysReg ArgRegs[] = {PI32V2::R0, PI32V2::R1, PI32V2::R2,
+                                        PI32V2::R3};
+    unsigned First = CCInfo.getFirstUnallocated(ArgRegs);
+    FI->setFirstVarArgReg(First);
+    if (First < 4) {
+      int Bytes = 4 * (4 - int(First));
+      int Save = MFI.CreateFixedObject(Bytes, -Bytes, true);
+      FI->setVarArgsSaveIndex(Save);
+      FI->setVarArgsFrameIndex(Save);
+    } else {
+      FI->setVarArgsFrameIndex(
+          MFI.CreateFixedObject(4, CCInfo.getStackSize(), true));
+    }
+  }
   return Chain;
 }
 
@@ -168,8 +199,6 @@ SDValue PI32V2TargetLowering::LowerCall(CallLoweringInfo &CLI,
   SDValue Chain = CLI.Chain;
   SDValue Callee = CLI.Callee;
   CLI.IsTailCall = false;
-  if (CLI.IsVarArg)
-    report_fatal_error("PI32V2: variadic calls are not supported yet");
 
   SmallVector<CCValAssign, 16> ArgLocs;
   CCState CCInfo(CLI.CallConv, CLI.IsVarArg, MF, ArgLocs, *DAG.getContext());

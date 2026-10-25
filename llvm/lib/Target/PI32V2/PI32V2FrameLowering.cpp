@@ -17,6 +17,7 @@
 #include "PI32V2FrameLowering.h"
 #include "MCTargetDesc/PI32V2MCTargetDesc.h"
 #include "PI32V2InstrInfo.h"
+#include "PI32V2MachineFunctionInfo.h"
 #include "PI32V2Subtarget.h"
 #include "llvm/CodeGen/MachineFrameInfo.h"
 #include "llvm/CodeGen/MachineFunction.h"
@@ -44,6 +45,10 @@ static unsigned savedBytes(const MachineFunction &MF) {
   return 4 * MF.getFrameInfo().getCalleeSavedInfo().size();
 }
 
+static unsigned varArgsBytes(const MachineFunction &MF) {
+  return MF.getInfo<PI32V2MachineFunctionInfo>()->getVarArgsSaveSize();
+}
+
 // sp += Amount, in steps the instruction can take (-4096..4092).
 static void adjustSP(MachineBasicBlock &MBB, MachineBasicBlock::iterator I,
                      const DebugLoc &DL, const PI32V2InstrInfo &TII,
@@ -61,12 +66,26 @@ void PI32V2FrameLowering::emitPrologue(MachineFunction &MF,
   const PI32V2InstrInfo &TII = *STI.getInstrInfo();
   MachineBasicBlock::iterator I = MBB.begin();
   DebugLoc DL;
+  // A variadic function first pushes the argument registers its named
+  // arguments did not use, so they continue the stack arguments.
+  auto *FI = MF.getInfo<PI32V2MachineFunctionInfo>();
+  if (unsigned VA = varArgsBytes(MF)) {
+    uint16_t Mask = 0;
+    for (unsigned R = FI->getFirstVarArgReg(); R < 4; ++R)
+      Mask |= 1u << R;
+    auto B = BuildMI(MBB, I, DL, TII.get(PI32V2::PUSH_RMASK))
+                 .addImm(Mask)
+                 .setMIFlag(MachineInstr::FrameSetup);
+    for (unsigned R = FI->getFirstVarArgReg(); R < 4; ++R)
+      B.addReg(PI32V2::R0 + R, RegState::Implicit);
+    (void)VA;
+  }
   // After the push of the saved registers.
   while (I != MBB.end() && I->getFlag(MachineInstr::FrameSetup))
     ++I;
   uint64_t StackSize = alignTo(MFI.getStackSize(), getStackAlign());
   MFI.setStackSize(StackSize);
-  int64_t Rest = int64_t(StackSize) - savedBytes(MF);
+  int64_t Rest = int64_t(StackSize) - savedBytes(MF) - varArgsBytes(MF);
   adjustSP(MBB, I, DL, TII, -Rest, MachineInstr::FrameSetup);
   if (hasFP(MF))
     BuildMI(MBB, I, DL, TII.get(PI32V2::MOV_R_SR), PI32V2::R7)
@@ -83,15 +102,16 @@ void PI32V2FrameLowering::emitEpilogue(MachineFunction &MF,
   while (I != MBB.begin() && std::prev(I)->getFlag(MachineInstr::FrameDestroy))
     --I;
   DebugLoc DL = I != MBB.end() ? I->getDebugLoc() : DebugLoc();
-  int64_t Rest = int64_t(MFI.getStackSize()) - savedBytes(MF);
-  if (hasFP(MF)) {
+  int64_t Rest = int64_t(MFI.getStackSize()) - savedBytes(MF) - varArgsBytes(MF);
+  if (hasFP(MF))
     BuildMI(MBB, I, DL, TII.get(PI32V2::MOV_SR_R), PI32V2::SP)
         .addReg(PI32V2::R7)
         .setMIFlag(MachineInstr::FrameDestroy);
-    adjustSP(MBB, I, DL, TII, Rest, MachineInstr::FrameDestroy);
-    return;
-  }
   adjustSP(MBB, I, DL, TII, Rest, MachineInstr::FrameDestroy);
+  // The pushed argument registers, after the saved registers' pop.
+  if (unsigned VA = varArgsBytes(MF))
+    adjustSP(MBB, MBB.getFirstTerminator(), DL, TII, VA,
+             MachineInstr::FrameDestroy);
 }
 
 MachineBasicBlock::iterator PI32V2FrameLowering::eliminateCallFramePseudoInstr(
@@ -153,7 +173,10 @@ bool PI32V2FrameLowering::restoreCalleeSavedRegisters(
   DebugLoc DL = MI != MBB.end() ? MI->getDebugLoc() : DebugLoc();
   bool Rets;
   uint16_t Mask = gprMask(CSI, Rets);
-  bool IsReturn = MI != MBB.end() && MI->getOpcode() == PI32V2::PseudoRET;
+  // A variadic function releases its pushed argument registers after the
+  // pop, so its pop does not return.
+  bool IsReturn = MI != MBB.end() && MI->getOpcode() == PI32V2::PseudoRET &&
+                  !varArgsBytes(*MBB.getParent());
   if (Rets && IsReturn) {
     // {pc, ...} = [sp++]: restores and returns; the return's uses move to it.
     auto B = BuildMI(MBB, MI, DL, TII.get(PI32V2::POP_PC_RMASK))
