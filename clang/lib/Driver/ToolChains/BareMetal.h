@@ -40,6 +40,10 @@ public:
                            const llvm::opt::ArgList &Args);
   bool hasValidGCCInstallation() const { return IsGCCInstallationValid; }
   bool isBareMetal() const override { return true; }
+  // pi32v2: no GNU linker exists for it (JieLi's is its own); ld.lld links it.
+  const char *getDefaultLinker() const override {
+    return getTriple().getArch() == llvm::Triple::pi32v2 ? "ld.lld" : "ld";
+  }
   bool isCrossCompiling() const override { return true; }
   bool HasNativeLLVMSupport() const override { return true; }
   bool isPICDefault() const override { return false; }

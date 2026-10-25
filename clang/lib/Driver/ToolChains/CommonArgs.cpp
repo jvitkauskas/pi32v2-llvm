@@ -585,6 +585,8 @@ void tools::AddLinkerInputs(const ToolChain &TC, const InputInfoList &Inputs,
 
 const char *tools::getLDMOption(const llvm::Triple &T, const ArgList &Args) {
   switch (T.getArch()) {
+  case llvm::Triple::pi32v2:
+    return "pi32v2elf";
   case llvm::Triple::x86:
     if (T.isOSIAMCU())
       return "elf_iamcu";
@@ -837,6 +839,7 @@ std::string tools::getCPUName(const Driver &D, const ArgList &Args,
     return loongarch::getLoongArchTargetCPU(Args, T);
 
   case llvm::Triple::xtensa:
+  case llvm::Triple::pi32v2:
     if (const Arg *A = Args.getLastArg(options::OPT_mcpu_EQ))
       return A->getValue();
     return "";
