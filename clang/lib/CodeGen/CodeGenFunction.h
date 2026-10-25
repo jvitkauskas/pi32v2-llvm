@@ -4972,6 +4972,7 @@ public:
                                           const CallExpr *E);
   llvm::Value *EmitHexagonBuiltinExpr(unsigned BuiltinID, const CallExpr *E);
   llvm::Value *EmitAVRBuiltinExpr(unsigned BuiltinID, const CallExpr *E);
+  llvm::Value *EmitPI32V2BuiltinExpr(unsigned BuiltinID, const CallExpr *E);
   llvm::Value *EmitRISCVBuiltinExpr(unsigned BuiltinID, const CallExpr *E,
                                     ReturnValueSlot ReturnValue);
 

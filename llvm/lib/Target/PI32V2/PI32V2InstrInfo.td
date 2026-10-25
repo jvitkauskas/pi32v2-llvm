@@ -183,6 +183,12 @@ def : Pat<(sdiv GPR:$a, GPR:$b), (DIV_S_RRR GPR:$a, GPR:$b)>;
 def : Pat<(mul GPR:$a, modimm:$n), (MUL_MODIMM_RRI GPR:$a, imm:$n)>;
 def : Pat<(ctlz GPR:$a), (CLZ_RR GPR:$a)>;
 def : Pat<(bswap GPR:$a), (REV8_RR GPR:$a)>;
+def : Pat<(smax GPR:$a, GPR:$b), (SMAX_RRR GPR:$a, GPR:$b)>;
+def : Pat<(smin GPR:$a, GPR:$b), (SMIN_RRR GPR:$a, GPR:$b)>;
+def : Pat<(umax GPR:$a, GPR:$b), (UMAX_RRR GPR:$a, GPR:$b)>;
+def : Pat<(umin GPR:$a, GPR:$b), (UMIN_RRR GPR:$a, GPR:$b)>;
+// the leading bits equal to bit 31 (__builtin_pi32v2_cls)
+def : Pat<(ctlz (xor GPR:$a, (sra GPR:$a, (i32 31)))), (CLS_RR GPR:$a)>;
 def : Pat<(rotr GPR:$a, GPR:$n), (ROR_RRR GPR:$a, GPR:$n)>;
 def : Pat<(rotr GPR:$a, shamt:$n), (ROR_RRI GPR:$a, imm:$n)>;
 

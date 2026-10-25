@@ -21,6 +21,9 @@ class PI32V2TargetLowering : public TargetLowering {
   const PI32V2Subtarget &Subtarget;
 
 public:
+  // clz is one instruction, defined for 0 (32): no test around it.
+  bool isCheapToSpeculateCtlz(Type *Ty) const override { return true; }
+  bool isCheapToSpeculateCttz(Type *Ty) const override { return true; }
   // The divider is one instruction: optimizing for size, a division by a
   // constant stays a division (as JieLi's compiler makes it), else it is the
   // faster multiply sequence.

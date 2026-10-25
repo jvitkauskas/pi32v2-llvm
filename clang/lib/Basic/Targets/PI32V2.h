@@ -58,9 +58,7 @@ public:
   BuiltinVaListKind getBuiltinVaListKind() const override {
     return TargetInfo::VoidPtrBuiltinVaList;
   }
-  llvm::SmallVector<Builtin::InfosShard> getTargetBuiltins() const override {
-    return {};
-  }
+  llvm::SmallVector<Builtin::InfosShard> getTargetBuiltins() const override;
   bool validateAsmConstraint(const char *&Name,
                              TargetInfo::ConstraintInfo &Info) const override {
     if (*Name == 'r') {

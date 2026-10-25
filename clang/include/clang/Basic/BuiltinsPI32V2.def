@@ -1,0 +1,38 @@
+//===--- BuiltinsPI32V2.def - PI32V2 Builtin function database --*- C++ -*-===//
+//
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+//
+//===----------------------------------------------------------------------===//
+//
+// The PI32V2 builtins, those of JieLi's compiler (pi32v2-isa docs/COMPILER.md
+// section 3). Users of this file must define the BUILTIN macro.
+//
+//===----------------------------------------------------------------------===//
+
+// Instructions without operands
+BUILTIN(__builtin_pi32v2_cli, "v", "n")
+BUILTIN(__builtin_pi32v2_sti, "v", "n")
+BUILTIN(__builtin_pi32v2_csync, "v", "n")
+BUILTIN(__builtin_pi32v2_nop, "v", "n")
+BUILTIN(__builtin_pi32v2_trigger, "v", "n")
+BUILTIN(__builtin_pi32v2_lockset, "v", "n")
+BUILTIN(__builtin_pi32v2_lockclr, "v", "n")
+
+// Cache operations on an address
+BUILTIN(__builtin_pi32v2_flush, "vi", "n")
+BUILTIN(__builtin_pi32v2_flushinv, "vi", "n")
+BUILTIN(__builtin_pi32v2_iflush, "vi", "n")
+BUILTIN(__builtin_pi32v2_pfetch, "vi", "n")
+
+// Bit operations
+BUILTIN(__builtin_pi32v2_clz, "ii", "nc")
+BUILTIN(__builtin_pi32v2_cls, "ii", "nc")
+BUILTIN(__builtin_pi32v2_popcount, "ii", "nc")
+BUILTIN(__builtin_pi32v2_rev8, "ii", "nc")
+BUILTIN(__builtin_pi32v2_zcmp, "ii", "nc")
+BUILTIN(__builtin_pi32v2_uextra, "iiIiIi", "nc")
+BUILTIN(__builtin_pi32v2_sextra, "iiIiIi", "nc")
+
+#undef BUILTIN
