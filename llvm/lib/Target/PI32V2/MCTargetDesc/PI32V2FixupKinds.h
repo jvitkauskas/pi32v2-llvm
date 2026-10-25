@@ -32,8 +32,11 @@ enum Fixups {
 struct PI32V2FixupLayout {
   const char *Name;
   uint8_t InsnBytes;   // the instruction's size
-  bool PCRel;          // the field is (target - end of instruction) / 2
+  bool PCRel;          // the value is target - start of the instruction
   uint8_t Reloc;       // the ELF relocation, 0 if it must be resolved here
+  int8_t Scale;        // field = (value - Add) / Scale
+  int8_t Add;
+  bool Signed;
   uint8_t Width;       // bits in the field
   uint8_t Bits[32];    // Inst bit of each field bit, most significant first
 };
@@ -52,8 +55,8 @@ struct PI32V2Relax {
 };
 
 const PI32V2FixupLayout &fixupLayout(unsigned Kind);
-/// The fixup kind of the expression operand of Opcode, or -1 if it has none.
-int fixupKindForOpcode(unsigned Opcode);
+/// The fixup kind of operand OpNo of Opcode, or -1 if it takes no expression.
+int fixupKindForOperand(unsigned Opcode, unsigned OpNo);
 } // namespace PI32V2
 } // namespace llvm
 

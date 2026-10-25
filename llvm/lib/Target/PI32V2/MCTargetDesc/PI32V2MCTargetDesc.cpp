@@ -12,6 +12,7 @@
 #include "TargetInfo/PI32V2TargetInfo.h"
 #include "llvm/MC/MCAsmInfo.h"
 #include "llvm/MC/MCInstrInfo.h"
+#include "llvm/MC/MCObjectFileInfo.h"
 #include "llvm/MC/MCRegisterInfo.h"
 #include "llvm/MC/MCSubtargetInfo.h"
 #include "llvm/MC/TargetRegistry.h"
@@ -33,6 +34,21 @@ static MCAsmInfo *createPI32V2MCAsmInfo(const MCRegisterInfo &MRI,
                                         const Triple &TT,
                                         const MCTargetOptions &Options) {
   return new PI32V2MCAsmInfo(TT, Options);
+}
+
+namespace {
+// .text is 2-aligned in JieLi's objects (pi32v2-isa docs/ELF.md section 2).
+class PI32V2MCObjectFileInfo : public MCObjectFileInfo {
+public:
+  unsigned getTextSectionAlignment() const override { return 2; }
+};
+} // namespace
+
+static MCObjectFileInfo *createPI32V2MCObjectFileInfo(MCContext &Ctx, bool PIC,
+                                                      bool LargeCodeModel) {
+  MCObjectFileInfo *MOFI = new PI32V2MCObjectFileInfo();
+  MOFI->initMCObjectFileInfo(Ctx, PIC, LargeCodeModel);
+  return MOFI;
 }
 
 static MCInstrInfo *createPI32V2MCInstrInfo() {
@@ -65,6 +81,7 @@ static MCInstPrinter *createPI32V2MCInstPrinter(const Triple &T,
 extern "C" LLVM_ABI LLVM_EXTERNAL_VISIBILITY void LLVMInitializePI32V2TargetMC() {
   Target &T = getThePI32V2Target();
   TargetRegistry::RegisterMCAsmInfo(T, createPI32V2MCAsmInfo);
+  TargetRegistry::RegisterMCObjectFileInfo(T, createPI32V2MCObjectFileInfo);
   TargetRegistry::RegisterMCInstrInfo(T, createPI32V2MCInstrInfo);
   TargetRegistry::RegisterMCRegInfo(T, createPI32V2MCRegisterInfo);
   TargetRegistry::RegisterMCSubtargetInfo(T, createPI32V2MCSubtargetInfo);

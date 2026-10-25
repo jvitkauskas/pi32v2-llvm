@@ -91,7 +91,7 @@ uint64_t PI32V2MCCodeEmitter::getMachineOpValue(
 uint64_t PI32V2MCCodeEmitter::encodeTargetExpr(
     const MCInst &MI, unsigned OpNo, unsigned Width,
     SmallVectorImpl<MCFixup> &Fixups, const MCSubtargetInfo &STI) const {
-  int Kind = PI32V2::fixupKindForOpcode(MI.getOpcode());
+  int Kind = PI32V2::fixupKindForOperand(MI.getOpcode(), OpNo);
   if (Kind < 0)
     report_fatal_error("PI32V2: no fixup for this branch");
   Fixups.push_back(MCFixup::create(0, MI.getOperand(OpNo).getExpr(),
@@ -99,11 +99,12 @@ uint64_t PI32V2MCCodeEmitter::encodeTargetExpr(
   return 0;
 }
 
-// An expression in a constant: only the 32-bit constant loads take one.
+// An expression in a constant: the 32-bit constant loads, and the length and
+// shape of a block (resolved by the assembler).
 uint64_t PI32V2MCCodeEmitter::encodeImmExpr(
     const MCInst &MI, unsigned OpNo, unsigned Width,
     SmallVectorImpl<MCFixup> &Fixups, const MCSubtargetInfo &STI) const {
-  int Kind = PI32V2::fixupKindForOpcode(MI.getOpcode());
+  int Kind = PI32V2::fixupKindForOperand(MI.getOpcode(), OpNo);
   if (Kind < 0 || PI32V2::fixupLayout(Kind).PCRel) {
     Ctx.reportError(SMLoc(), "this instruction cannot take a symbol");
     return 0;

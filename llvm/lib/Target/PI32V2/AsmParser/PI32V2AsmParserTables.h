@@ -49,6 +49,7 @@ struct PI32V2Op {
   char Field;
   uint8_t Kind;
   uint16_t NumType;
+  bool Block; // a block's length or shape: given by the parser, not the line
 };
 
 struct PI32V2Template {
@@ -67,6 +68,8 @@ struct PI32V2Template {
   char SameFrom, SameTo; // an alias where field SameTo is field SameFrom
   bool Branch;           // has a branch target
   bool Abs32;            // has a 32-bit constant that takes a symbol
+  char Body;             // rep: the field of the body's length in bytes
+  char Then, Else;       // if: the fields of the parts' lengths in instructions
 };
 
 } // namespace llvm

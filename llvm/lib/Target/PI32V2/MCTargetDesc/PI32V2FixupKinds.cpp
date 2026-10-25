@@ -16,7 +16,7 @@ using namespace llvm::PI32V2;
 #define PI32V2_GEN_FIXUP_TABLE
 #include "PI32V2FixupsGen.inc"
 
-#define PI32V2_GEN_FIXUP_FOR_OPCODE
+#define PI32V2_GEN_FIXUP_FOR_OPERAND
 #include "PI32V2FixupsGen.inc"
 
 const PI32V2FixupLayout &PI32V2::fixupLayout(unsigned Kind) {
@@ -24,7 +24,7 @@ const PI32V2FixupLayout &PI32V2::fixupLayout(unsigned Kind) {
   return FixupLayouts[Kind - FirstTargetFixupKind];
 }
 
-int PI32V2::fixupKindForOpcode(unsigned Opcode) {
-  int K = fixupForOpcode(Opcode);
+int PI32V2::fixupKindForOperand(unsigned Opcode, unsigned OpNo) {
+  int K = fixupForOperand(Opcode, OpNo);
   return K < 0 ? -1 : K + FirstTargetFixupKind;
 }

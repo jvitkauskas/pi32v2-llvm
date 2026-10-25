@@ -15,6 +15,7 @@
 #include "llvm/MC/MCFixup.h"
 #include "llvm/MC/MCObjectWriter.h"
 #include "llvm/MC/MCSubtargetInfo.h"
+#include "llvm/MC/MCSymbolELF.h"
 #include "llvm/MC/MCValue.h"
 #include "llvm/Support/MathExtras.h"
 #include "llvm/Support/raw_ostream.h"
@@ -38,6 +39,42 @@ public:
   PI32V2AsmBackend() : MCAsmBackend(llvm::endianness::little) {}
 
   MCFixupKindInfo getFixupKindInfo(MCFixupKind Kind) const override;
+
+  // JieLi's assembler resolves a branch to any label of the same section
+  // that is not weak, global or not (docs/ELF.md section 5); LLVM's ELF
+  // writer would leave a global one to the linker.
+  std::optional<bool> evaluateFixup(const MCFragment &F, MCFixup &Fixup,
+                                    MCValue &Target, uint64_t &Value) override {
+    if (Fixup.getKind() < FirstTargetFixupKind || !Fixup.isPCRel())
+      return {};
+    const MCSymbol *A = Target.getAddSym();
+    if (!A || Target.getSubSym())
+      return {};
+    int64_t C = Target.getConstant();
+    // An alias (.set a2, tf+2): its value, if that is a label plus a number.
+    for (int Depth = 0; A->isVariable() && Depth < 8; ++Depth) {
+      if (static_cast<const MCSymbolELF *>(A)->getBinding() == ELF::STB_WEAK)
+        return {};
+      MCValue V;
+      if (!A->getVariableValue()->evaluateAsRelocatable(V, Asm) ||
+          !V.getAddSym() || V.getSubSym())
+        return {};
+      C += V.getConstant();
+      A = V.getAddSym();
+    }
+    if (A->isVariable() || !A->isInSection())
+      return {};
+    if (static_cast<const MCSymbolELF *>(A)->getBinding() == ELF::STB_WEAK)
+      return {};
+    if (&A->getSection() != F.getParent())
+      return {};
+    uint64_t Sym;
+    if (!Asm->getSymbolOffset(*A, Sym))
+      return {};
+    Value = Sym + C - (Asm->getFragmentOffset(F) + Fixup.getOffset());
+    return true;
+  }
+
   void applyFixup(const MCFragment &F, const MCFixup &Fixup,
                   const MCValue &Target, uint8_t *Data, uint64_t Value,
                   bool IsResolved) override;
@@ -68,10 +105,10 @@ public:
       return false;
     if (!Resolved)
       return L.Reloc == 0;
-    int64_t V = int64_t(Value) - L.InsnBytes;
-    if (V & 1)
+    int64_t V = int64_t(Value) - L.Add;
+    if (V % L.Scale)
       return false;
-    return !isIntN(L.Width, V / 2);
+    return !isIntN(L.Width, V / L.Scale);
   }
   void relaxInstruction(MCInst &Inst,
                         const MCSubtargetInfo &STI) const override {
@@ -124,18 +161,18 @@ void PI32V2AsmBackend::applyFixup(const MCFragment &F, const MCFixup &Fixup,
   // holds zero there unless the assembler resolved it.
   if (!IsResolved)
     return;
-  int64_t V = Value;
-  if (L.PCRel) {
-    V -= L.InsnBytes;
-    if (V & 1) {
-      getContext().reportError(Fixup.getLoc(), "branch target is odd");
-      return;
-    }
-    V /= 2;
-    if (!isIntN(L.Width, V)) {
-      getContext().reportError(Fixup.getLoc(), "branch target out of range");
-      return;
-    }
+  int64_t V = int64_t(Value) - L.Add;
+  if (V % L.Scale) {
+    getContext().reportError(Fixup.getLoc(), L.PCRel ? "branch target is odd"
+                                                     : "value is not a multiple "
+                                                       "of the field's step");
+    return;
+  }
+  V /= L.Scale;
+  if (L.Width < 32 && (L.Signed ? !isIntN(L.Width, V) : !isUIntN(L.Width, V))) {
+    getContext().reportError(Fixup.getLoc(), L.PCRel ? "branch target out of range"
+                                                     : "value out of range");
+    return;
   }
   unsigned Words = L.InsnBytes / 2;
   uint64_t Insn = 0;
