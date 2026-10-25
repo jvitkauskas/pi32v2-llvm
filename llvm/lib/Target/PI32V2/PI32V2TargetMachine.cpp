@@ -5,12 +5,72 @@
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
-//
-// No code generator yet: the target has its machine-code layer (assembler,
-// disassembler, object files) only.
-//
-//===----------------------------------------------------------------------===//
 
+#include "PI32V2TargetMachine.h"
+#include "PI32V2.h"
+#include "TargetInfo/PI32V2TargetInfo.h"
+#include "llvm/CodeGen/Passes.h"
+#include "llvm/CodeGen/TargetLoweringObjectFileImpl.h"
+#include "llvm/CodeGen/TargetPassConfig.h"
+#include "llvm/MC/TargetRegistry.h"
+#include "llvm/PassRegistry.h"
 #include "llvm/Support/Compiler.h"
 
-extern "C" LLVM_ABI LLVM_EXTERNAL_VISIBILITY void LLVMInitializePI32V2Target() {}
+using namespace llvm;
+
+extern "C" LLVM_ABI LLVM_EXTERNAL_VISIBILITY void LLVMInitializePI32V2Target() {
+  RegisterTargetMachine<PI32V2TargetMachine> X(getThePI32V2Target());
+  PassRegistry &PR = *PassRegistry::getPassRegistry();
+  initializePI32V2AsmPrinterPass(PR);
+  initializePI32V2DAGToDAGISelLegacyPass(PR);
+}
+
+PI32V2TargetMachine::PI32V2TargetMachine(const Target &T, const Triple &TT,
+                                         StringRef CPU, StringRef FS,
+                                         const TargetOptions &Options,
+                                         std::optional<Reloc::Model> RM,
+                                         std::optional<CodeModel::Model> CM,
+                                         CodeGenOptLevel OL, bool JIT)
+    : CodeGenTargetMachineImpl(T, TT.computeDataLayout(), TT, CPU, FS, Options,
+                               RM.value_or(Reloc::Static),
+                               getEffectiveCodeModel(CM, CodeModel::Small), OL),
+      TLOF(std::make_unique<TargetLoweringObjectFileELF>()) {
+  initAsmInfo();
+}
+
+PI32V2TargetMachine::~PI32V2TargetMachine() = default;
+
+const PI32V2Subtarget *
+PI32V2TargetMachine::getSubtargetImpl(const Function &F) const {
+  Attribute CPUAttr = F.getFnAttribute("target-cpu");
+  Attribute FSAttr = F.getFnAttribute("target-features");
+  std::string CPU =
+      CPUAttr.isValid() ? CPUAttr.getValueAsString().str() : TargetCPU;
+  std::string FS =
+      FSAttr.isValid() ? FSAttr.getValueAsString().str() : TargetFS;
+  auto &I = SubtargetMap[CPU + FS];
+  if (!I)
+    I = std::make_unique<PI32V2Subtarget>(TargetTriple, CPU, FS, *this);
+  return I.get();
+}
+
+namespace {
+class PI32V2PassConfig : public TargetPassConfig {
+public:
+  PI32V2PassConfig(PI32V2TargetMachine &TM, PassManagerBase &PM)
+      : TargetPassConfig(TM, PM) {}
+
+  PI32V2TargetMachine &getPI32V2TargetMachine() const {
+    return getTM<PI32V2TargetMachine>();
+  }
+
+  bool addInstSelector() override {
+    addPass(createPI32V2ISelDag(getPI32V2TargetMachine(), getOptLevel()));
+    return false;
+  }
+};
+} // namespace
+
+TargetPassConfig *PI32V2TargetMachine::createPassConfig(PassManagerBase &PM) {
+  return new PI32V2PassConfig(*this, PM);
+}

@@ -39,6 +39,7 @@ def FeatureAC791N : SubtargetFeature<"ac791n", "IsAC791N", "true",
 
 include "PI32V2RegisterInfo.td"
 include "PI32V2InstrFormats.td"
+include "PI32V2CallingConv.td"
 include "PI32V2InstrInfo.td"
 
 def PI32V2InstrInfo : InstrInfo;
