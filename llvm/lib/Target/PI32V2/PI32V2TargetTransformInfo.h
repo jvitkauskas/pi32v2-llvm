@@ -51,6 +51,14 @@ public:
     return Size ? static_cast<unsigned>(-40) : 0;
   }
 
+  // What inlining saves by removing a call: little here (a 2- or 4-byte call),
+  // LLVM's default (25, five instructions) inlines helpers like a GPIO write
+  // into every caller. 5 is the best for m-bootloader at -Oz (LTO).
+  unsigned getInlineCallPenalty(const Function *F, const CallBase &Call,
+                                unsigned DefaultCallPenalty) const override {
+    return F && F->hasOptSize() ? 5 : DefaultCallPenalty;
+  }
+
   InstructionCost getIntImmCost(const APInt &Imm, Type *Ty,
                                 TTI::TargetCostKind CostKind) const override {
     unsigned Bits = Ty->getPrimitiveSizeInBits();
