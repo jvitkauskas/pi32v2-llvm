@@ -1,6 +1,7 @@
 add_llvm_component_library(LLVMPI32V2Desc
   PI32V2AsmBackend.cpp
   PI32V2BaseInfo.cpp
+  PI32V2Compress.cpp
   PI32V2ELFObjectWriter.cpp
   PI32V2FixupKinds.cpp
   PI32V2InstPrinter.cpp

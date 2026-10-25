@@ -12,6 +12,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "MCTargetDesc/PI32V2BaseInfo.h"
 #include "MCTargetDesc/PI32V2MCTargetDesc.h"
 #include "PI32V2.h"
 #include "PI32V2TargetMachine.h"
@@ -25,12 +26,19 @@
 #include "llvm/MC/MCStreamer.h"
 #include "llvm/MC/MCSymbol.h"
 #include "llvm/MC/TargetRegistry.h"
+#include "llvm/CodeGen/MachineFunction.h"
+#include "llvm/CodeGen/TargetSubtargetInfo.h"
+#include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Compiler.h"
 #include "llvm/Support/ErrorHandling.h"
 
 using namespace llvm;
 
 #define DEBUG_TYPE "asm-printer"
+
+static cl::opt<bool> NoCompress(
+    "pi32v2-no-compress", cl::Hidden,
+    cl::desc("PI32V2: keep the general forms instead of the shorter ones"));
 
 namespace {
 class PI32V2AsmPrinter : public AsmPrinter {
@@ -127,6 +135,9 @@ void PI32V2AsmPrinter::emitInstruction(const MachineInstr *MI) {
     if (Call) // the target only; the rest are the argument registers
       break;
   }
+  if (!NoCompress)
+    PI32V2::compressInst(Inst, *MF->getSubtarget().getInstrInfo(),
+                         *OutContext.getRegisterInfo());
   EmitToStreamer(*OutStreamer, Inst);
 }
 
