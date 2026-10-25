@@ -148,6 +148,7 @@ static bool partCount(MachineBasicBlock &MBB, bool AllowLastExit,
       continue;
     if (MI.isMetaInstruction() || MI.isInlineAsm() || MI.isBundle() ||
         MI.isCFIInstruction() || MI.isConditionalBranch() ||
+        MI.isIndirectBranch() || // a switch's table follows it
         PI32V2::isIfOpener(MI.getOpcode()) || isSelect(MI.getOpcode()))
       return false;
     if (Last && Last->isTerminator())

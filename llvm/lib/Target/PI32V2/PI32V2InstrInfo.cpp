@@ -11,6 +11,7 @@
 #include "PI32V2Subtarget.h"
 #include "llvm/CodeGen/MachineFrameInfo.h"
 #include "llvm/CodeGen/MachineInstrBuilder.h"
+#include "llvm/CodeGen/MachineJumpTableInfo.h"
 #include "llvm/CodeGen/MachineMemOperand.h"
 #include "llvm/Support/ErrorHandling.h"
 
@@ -64,15 +65,20 @@ void PI32V2InstrInfo::storeRegToStackSlot(
   DebugLoc DL = I != MBB.end() ? I->getDebugLoc() : DebugLoc();
   if (PI32V2::GPRPairRegClass.hasSubClassEq(RC) ||
       (Src.isPhysical() && PI32V2::GPRPairRegClass.contains(Src))) {
-    // A pair: its two words, the low one first.
-    for (unsigned K = 0; K < 2; ++K)
-      BuildMI(MBB, I, DL, get(PI32V2::STW_FI))
-          .addReg(RI.getSubReg(Src, K ? PI32V2::sub_hi : PI32V2::sub_lo),
-                  getKillRegState(IsKill))
-          .addFrameIndex(FI)
+    // A pair: its two words, the low one first (a virtual pair by its
+    // sub-registers, a physical one by its halves).
+    for (unsigned K = 0; K < 2; ++K) {
+      unsigned Idx = K ? PI32V2::sub_hi : PI32V2::sub_lo;
+      auto B = BuildMI(MBB, I, DL, get(PI32V2::STW_FI));
+      if (Src.isVirtual())
+        B.addReg(Src, getKillRegState(IsKill && K == 1), Idx);
+      else
+        B.addReg(RI.getSubReg(Src, Idx), getKillRegState(IsKill));
+      B.addFrameIndex(FI)
           .addImm(4 * K)
           .addMemOperand(frameMMO(MBB, FI, MachineMemOperand::MOStore))
           .setMIFlag(Flags);
+    }
     return;
   }
   BuildMI(MBB, I, DL, get(PI32V2::STW_FI))
@@ -90,13 +96,18 @@ void PI32V2InstrInfo::loadRegFromStackSlot(
   DebugLoc DL = I != MBB.end() ? I->getDebugLoc() : DebugLoc();
   if (PI32V2::GPRPairRegClass.hasSubClassEq(RC) ||
       (Dst.isPhysical() && PI32V2::GPRPairRegClass.contains(Dst))) {
-    for (unsigned K = 0; K < 2; ++K)
-      BuildMI(MBB, I, DL, get(PI32V2::LDW_FI),
-              RI.getSubReg(Dst, K ? PI32V2::sub_hi : PI32V2::sub_lo))
-          .addFrameIndex(FI)
+    for (unsigned K = 0; K < 2; ++K) {
+      unsigned Idx = K ? PI32V2::sub_hi : PI32V2::sub_lo;
+      auto B = BuildMI(MBB, I, DL, get(PI32V2::LDW_FI));
+      if (Dst.isVirtual()) // the first half's definition leaves the other undefined
+        B.addReg(Dst, K == 0 ? RegState::Define | RegState::Undef : RegState::Define, Idx);
+      else
+        B.addReg(RI.getSubReg(Dst, Idx), RegState::Define);
+      B.addFrameIndex(FI)
           .addImm(4 * K)
           .addMemOperand(frameMMO(MBB, FI, MachineMemOperand::MOLoad))
           .setMIFlag(Flags);
+    }
     return;
   }
   BuildMI(MBB, I, DL, get(PI32V2::LDW_FI), Dst)
@@ -293,6 +304,9 @@ unsigned PI32V2InstrInfo::getInstSizeInBytes(const MachineInstr &MI) const {
   case PI32V2::PseudoCALLR:
   case PI32V2::PseudoRET:
     return 2;
+  case PI32V2::PseudoBRJT: // at most: li, the scaling, a load, goto, the table
+    return 6 + 4 + 4 + 2 + 3 +
+           4 * MI.getMF()->getJumpTableInfo()->getJumpTables()[MI.getOperand(3).getIndex()].MBBs.size();
   case PI32V2::LDW_POST: case PI32V2::LDHU_POST: case PI32V2::LDHS_POST:
   case PI32V2::LDBU_POST: case PI32V2::LDBS_POST: case PI32V2::STW_POST:
   case PI32V2::STH_POST: case PI32V2::STB_POST:

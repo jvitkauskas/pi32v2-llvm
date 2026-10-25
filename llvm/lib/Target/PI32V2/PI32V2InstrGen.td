@@ -6491,6 +6491,8 @@ def LSL_PAIR_R : PI32V2Inst32<(outs GPRPair:$r), (ins GPRPair:$r_in, GPR:$s), "$
   let Inst{1} = 0;
   let Inst{0} = 0;
   let Constraints = "$r = $r_in";
+  let hasSideEffects = 0;
+  let Defs = [PSR];
 }
 def SHL3_PAIR_R : PI32V2Inst32<(outs GPRPair:$r), (ins GPRPair:$r_in, GPR:$s), "${r} <<<= ${s}"> {
   bits<3> r;
@@ -6565,6 +6567,8 @@ def LSR_PAIR_R : PI32V2Inst32<(outs GPRPair:$r), (ins GPRPair:$r_in, GPR:$s), "$
   let Inst{1} = 1;
   let Inst{0} = 0;
   let Constraints = "$r = $r_in";
+  let hasSideEffects = 0;
+  let Defs = [PSR];
 }
 def ASR_PAIR_R : PI32V2Inst32<(outs GPRPair:$r), (ins GPRPair:$r_in, GPR:$s), "${r} >>>= ${s}"> {
   bits<3> r;
@@ -6602,6 +6606,8 @@ def ASR_PAIR_R : PI32V2Inst32<(outs GPRPair:$r), (ins GPRPair:$r_in, GPR:$s), "$
   let Inst{1} = 1;
   let Inst{0} = 1;
   let Constraints = "$r = $r_in";
+  let hasSideEffects = 0;
+  let Defs = [PSR];
 }
 def ROR_PR : PI32V2Inst32<(outs GPRPair:$r), (ins GPRPair:$r_in, GPR:$s), "${r} <>= ${s}"> {
   bits<3> r;

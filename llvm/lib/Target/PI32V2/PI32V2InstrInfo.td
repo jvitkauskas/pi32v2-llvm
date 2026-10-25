@@ -29,7 +29,14 @@ def SDT_PI32V2Div64 : SDTypeProfile<2, 3, [SDTCisVT<0, i32>, SDTCisVT<1, i32>,
                                            SDTCisVT<2, i32>, SDTCisVT<3, i32>,
                                            SDTCisVT<4, i32>]>;
 def PI32V2udiv64 : SDNode<"PI32V2ISD::UDIV64", SDT_PI32V2Div64>;
+// (low, high) shifted by a register count: the pair shifts (r1_r0 <<= r2)
+def PI32V2shl64 : SDNode<"PI32V2ISD::SHL64", SDT_PI32V2Div64>;
+def PI32V2srl64 : SDNode<"PI32V2ISD::SRL64", SDT_PI32V2Div64>;
+def PI32V2sra64 : SDNode<"PI32V2ISD::SRA64", SDT_PI32V2Div64>;
 def PI32V2sdiv64 : SDNode<"PI32V2ISD::SDIV64", SDT_PI32V2Div64>;
+// a switch: the index and the jump table
+def SDT_PI32V2BrJT : SDTypeProfile<0, 2, [SDTCisVT<0, i32>, SDTCisVT<1, i32>]>;
+def PI32V2brjt : SDNode<"PI32V2ISD::BRJT", SDT_PI32V2BrJT, [SDNPHasChain]>;
 def PI32V2tail : SDNode<"PI32V2ISD::TAIL", SDT_PI32V2Call,
                         [SDNPHasChain, SDNPOptInGlue, SDNPVariadic]>;
 def PI32V2ret : SDNode<"PI32V2ISD::RET", SDTNone,
@@ -81,6 +88,14 @@ let isCall = 1, isTerminator = 1, isReturn = 1, isBarrier = 1, Uses = [SP],
 def PseudoTAIL : PI32V2Pseudo<(outs), (ins calltarget:$dst, variable_ops)>;
 def : Pat<(PI32V2tail tglobaladdr:$dst), (PseudoTAIL tglobaladdr:$dst)>;
 def : Pat<(PI32V2tail texternalsym:$dst), (PseudoTAIL texternalsym:$dst)>;
+
+// A switch (PI32V2DAGToDAGISel): tbb or tbh and the table after it when the
+// cases follow it, else an inline table of addresses; PI32V2AsmPrinter picks
+// by the final layout. The index register is overwritten, tmp a scratch.
+let isBranch = 1, isIndirectBranch = 1, isTerminator = 1, isBarrier = 1,
+    hasSideEffects = 1, Constraints = "$dead = $idx", Defs = [PSR] in
+def PseudoBRJT : PI32V2Pseudo<(outs GPR:$dead, GPR:$tmp),
+                              (ins GPR:$idx, i32imm_op:$jti)>;
 
 // return: rts, or the epilogue's {pc, ...} = [sp++].
 let isReturn = 1, isTerminator = 1, isBarrier = 1, Uses = [RETS] in
