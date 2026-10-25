@@ -98,6 +98,30 @@ bool compressList(MCInst &Inst) {
   return false;
 }
 
+// A byte or halfword extension as a bit field (the code generator's) is the
+// 16-bit .b0/.l form when both registers are r0..r7.
+bool compressExt(MCInst &Inst, const MCRegisterInfo &MRI) {
+  unsigned Opc = Inst.getOpcode();
+  if ((Opc != PI32V2::SEXTRA_RRII && Opc != PI32V2::UEXTRA_RRII) ||
+      !Inst.getOperand(2).isImm() || !Inst.getOperand(3).isImm() ||
+      Inst.getOperand(2).getImm() != 0)
+    return false;
+  int64_t L = Inst.getOperand(3).getImm();
+  const MCRegisterClass &Lo = MRI.getRegClass(PI32V2::GPRLoRegClassID);
+  if ((L != 8 && L != 16) || !Lo.contains(Inst.getOperand(0).getReg()) ||
+      !Lo.contains(Inst.getOperand(1).getReg()))
+    return false;
+  bool S = Opc == PI32V2::SEXTRA_RRII;
+  MCInst E;
+  E.setOpcode(L == 8 ? (S ? PI32V2::EXT_B0_S : PI32V2::EXT_B0_U)
+                     : (S ? PI32V2::EXT_L_S : PI32V2::EXT_L_U));
+  E.setLoc(Inst.getLoc());
+  E.addOperand(Inst.getOperand(0));
+  E.addOperand(Inst.getOperand(1));
+  Inst = E;
+  return true;
+}
+
 bool same(const MCOperand &A, const MCOperand &B) {
   if (A.isReg() && B.isReg())
     return A.getReg() == B.getReg();
@@ -109,10 +133,18 @@ bool same(const MCOperand &A, const MCOperand &B) {
 
 bool PI32V2::compressInst(MCInst &Inst, const MCInstrInfo &MII,
                           const MCRegisterInfo &MRI) {
-  for (const MCOperand &MO : Inst)
-    if (!MO.isReg() && !MO.isImm())
-      return false; // an expression keeps its form (and its relocation)
-  if (compressList(Inst))
+  // An expression keeps its form (and its relocation), except a branch
+  // target: a branch starts in its shortest form and grows by relaxation, as
+  // JieLi's assembler does it.
+  const MCInstrDesc &LD = MII.get(Inst.getOpcode());
+  for (unsigned K = 0; K < Inst.getNumOperands(); ++K) {
+    const MCOperand &MO = Inst.getOperand(K);
+    if (!MO.isReg() && !MO.isImm() &&
+        !(MO.isExpr() && K < LD.getNumOperands() &&
+          LD.operands()[K].OperandType == MCOI::OPERAND_PCREL))
+      return false;
+  }
+  if (compressList(Inst) || compressExt(Inst, MRI))
     return true;
   for (const PI32V2CompressRule &R : CompressRules) {
     if (R.Long != Inst.getOpcode())
@@ -132,10 +164,13 @@ bool PI32V2::compressInst(MCInst &Inst, const MCInstrInfo &MII,
     for (unsigned K = 0; K < R.NumOps && Ok; ++K) {
       const MCOperand &MO = Inst.getOperand(R.Prog[K]);
       int16_t RC = D.operands()[K].RegClass;
+      bool PCRel = D.operands()[K].OperandType == MCOI::OPERAND_PCREL;
       if (MO.isReg())
         Ok = RC >= 0 && MRI.getRegClass(RC).contains(MO.getReg());
+      else if (MO.isExpr())
+        Ok = PCRel; // the target: relaxation makes it reach
       else
-        Ok = RC < 0 && immFits(R.Short, K, MO.getImm());
+        Ok = RC < 0 && !PCRel && immFits(R.Short, K, MO.getImm());
       S.addOperand(MO);
     }
     if (Ok) {

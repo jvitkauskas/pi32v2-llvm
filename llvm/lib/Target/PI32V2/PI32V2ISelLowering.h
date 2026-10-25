@@ -21,6 +21,10 @@ class PI32V2TargetLowering : public TargetLowering {
   const PI32V2Subtarget &Subtarget;
 
 public:
+  // Inline memcpy/memset accesses are as wide as both ends' alignment allows
+  // (no misaligned words); a copy that would take too many becomes a call.
+  EVT getOptimalMemOpType(LLVMContext &Context, const MemOp &Op,
+                          const AttributeList &FuncAttributes) const override;
   // A register pair (an i64 node of the pair multiply) counts as two general
   // registers for the scheduler's register pressure.
   std::pair<const TargetRegisterClass *, uint8_t>

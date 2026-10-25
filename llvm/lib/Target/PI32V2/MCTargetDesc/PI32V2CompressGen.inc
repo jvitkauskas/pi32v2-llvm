@@ -16,12 +16,67 @@ static const PI32V2CompressRule CompressRules[] = {
     {PI32V2::ADD_R_SP_I_L, PI32V2::ADD_R_SP_I, -1, -1, -1, 0, 2, {0, 1}},
     {PI32V2::ADD_S14_RRI, PI32V2::ADD_RI_NEG7, 0, 1, -1, 0, 3, {0, 0, 2}},
     {PI32V2::ADD_S14_RRI, PI32V2::ADD_RRI, -1, -1, -1, 0, 3, {0, 1, 2}},
+    {PI32V2::ADD_SP_I_L, PI32V2::ADD_SP_I, -1, -1, -1, 0, 1, {0}},
     {PI32V2::AND_MODIMM_RRI, PI32V2::AND_INVBIT, 0, 1, -1, 0, 3, {0, 0, 2}},
     {PI32V2::AND_RRR, PI32V2::AND_RR, 0, 1, -1, 0, 3, {0, 0, 2}},
     {PI32V2::AND_RRR, PI32V2::AND_RR, 0, 2, -1, 0, 3, {0, 0, 1}},
     {PI32V2::ASR_RRI_L, PI32V2::ASR_RRI, -1, -1, -1, 0, 3, {0, 1, 2}},
     {PI32V2::ASR_RRI_L, PI32V2::ASR_RRI, 0, 1, -1, 0, 3, {0, 1, 2}},
     {PI32V2::ASR_RRR, PI32V2::ASR_RR, 0, 1, -1, 0, 3, {0, 0, 2}},
+    {PI32V2::BEQ_RI, PI32V2::BEQZ, -1, -1, 1, 0, 2, {0, 2}},
+    {PI32V2::BEQ_RI_L, PI32V2::BEQZ, -1, -1, 1, 0, 2, {0, 2}},
+    {PI32V2::BEQ_RI_L, PI32V2::BEQ_RI, -1, -1, -1, 0, 3, {0, 1, 2}},
+    {PI32V2::BEQ_RR_L, PI32V2::BEQ_RR, -1, -1, -1, 0, 3, {0, 1, 2}},
+    {PI32V2::BEQ_RR_L, PI32V2::BEQ_RR, 0, 1, -1, 0, 3, {0, 1, 2}},
+    {PI32V2::BFEQ_RR_L, PI32V2::BFEQ_RR, -1, -1, -1, 0, 3, {0, 1, 2}},
+    {PI32V2::BFEQ_RR_L, PI32V2::BFEQ_RR, 0, 1, -1, 0, 3, {0, 1, 2}},
+    {PI32V2::BFGE_RR_L, PI32V2::BFGE_RR, -1, -1, -1, 0, 3, {0, 1, 2}},
+    {PI32V2::BFGE_RR_L, PI32V2::BFGE_RR, 0, 1, -1, 0, 3, {0, 1, 2}},
+    {PI32V2::BFGT_RR_L, PI32V2::BFGT_RR, -1, -1, -1, 0, 3, {0, 1, 2}},
+    {PI32V2::BFGT_RR_L, PI32V2::BFGT_RR, 0, 1, -1, 0, 3, {0, 1, 2}},
+    {PI32V2::BFLE_RR_L, PI32V2::BFLE_RR, -1, -1, -1, 0, 3, {0, 1, 2}},
+    {PI32V2::BFLE_RR_L, PI32V2::BFLE_RR, 0, 1, -1, 0, 3, {0, 1, 2}},
+    {PI32V2::BFLT_RR_L, PI32V2::BFLT_RR, -1, -1, -1, 0, 3, {0, 1, 2}},
+    {PI32V2::BFLT_RR_L, PI32V2::BFLT_RR, 0, 1, -1, 0, 3, {0, 1, 2}},
+    {PI32V2::BFUGE_RR_L, PI32V2::BFUGE_RR, -1, -1, -1, 0, 3, {0, 1, 2}},
+    {PI32V2::BFUGE_RR_L, PI32V2::BFUGE_RR, 0, 1, -1, 0, 3, {0, 1, 2}},
+    {PI32V2::BFUGT_RR_L, PI32V2::BFUGT_RR, -1, -1, -1, 0, 3, {0, 1, 2}},
+    {PI32V2::BFUGT_RR_L, PI32V2::BFUGT_RR, 0, 1, -1, 0, 3, {0, 1, 2}},
+    {PI32V2::BFULE_RR_L, PI32V2::BFULE_RR, -1, -1, -1, 0, 3, {0, 1, 2}},
+    {PI32V2::BFULE_RR_L, PI32V2::BFULE_RR, 0, 1, -1, 0, 3, {0, 1, 2}},
+    {PI32V2::BFULT_RR_L, PI32V2::BFULT_RR, -1, -1, -1, 0, 3, {0, 1, 2}},
+    {PI32V2::BFULT_RR_L, PI32V2::BFULT_RR, 0, 1, -1, 0, 3, {0, 1, 2}},
+    {PI32V2::BFUNE_RR_L, PI32V2::BFUNE_RR, -1, -1, -1, 0, 3, {0, 1, 2}},
+    {PI32V2::BFUNE_RR_L, PI32V2::BFUNE_RR, 0, 1, -1, 0, 3, {0, 1, 2}},
+    {PI32V2::BGES_RI_L, PI32V2::BGES_RI, -1, -1, -1, 0, 3, {0, 1, 2}},
+    {PI32V2::BGES_RR_L, PI32V2::BGES_RR, -1, -1, -1, 0, 3, {0, 1, 2}},
+    {PI32V2::BGES_RR_L, PI32V2::BGES_RR, 0, 1, -1, 0, 3, {0, 1, 2}},
+    {PI32V2::BGE_RI_L, PI32V2::BGE_RI, -1, -1, -1, 0, 3, {0, 1, 2}},
+    {PI32V2::BGE_RR_L, PI32V2::BGE_RR, -1, -1, -1, 0, 3, {0, 1, 2}},
+    {PI32V2::BGE_RR_L, PI32V2::BGE_RR, 0, 1, -1, 0, 3, {0, 1, 2}},
+    {PI32V2::BGTS_RI_L, PI32V2::BGTS_RI, -1, -1, -1, 0, 3, {0, 1, 2}},
+    {PI32V2::BGTS_RR_L, PI32V2::BGTS_RR, -1, -1, -1, 0, 3, {0, 1, 2}},
+    {PI32V2::BGTS_RR_L, PI32V2::BGTS_RR, 0, 1, -1, 0, 3, {0, 1, 2}},
+    {PI32V2::BGT_RI_L, PI32V2::BGT_RI, -1, -1, -1, 0, 3, {0, 1, 2}},
+    {PI32V2::BGT_RR_L, PI32V2::BGT_RR, -1, -1, -1, 0, 3, {0, 1, 2}},
+    {PI32V2::BGT_RR_L, PI32V2::BGT_RR, 0, 1, -1, 0, 3, {0, 1, 2}},
+    {PI32V2::BLES_RI_L, PI32V2::BLES_RI, -1, -1, -1, 0, 3, {0, 1, 2}},
+    {PI32V2::BLES_RR_L, PI32V2::BLES_RR, -1, -1, -1, 0, 3, {0, 1, 2}},
+    {PI32V2::BLES_RR_L, PI32V2::BLES_RR, 0, 1, -1, 0, 3, {0, 1, 2}},
+    {PI32V2::BLE_RI_L, PI32V2::BLE_RI, -1, -1, -1, 0, 3, {0, 1, 2}},
+    {PI32V2::BLE_RR_L, PI32V2::BLE_RR, -1, -1, -1, 0, 3, {0, 1, 2}},
+    {PI32V2::BLE_RR_L, PI32V2::BLE_RR, 0, 1, -1, 0, 3, {0, 1, 2}},
+    {PI32V2::BLTS_RI_L, PI32V2::BLTS_RI, -1, -1, -1, 0, 3, {0, 1, 2}},
+    {PI32V2::BLTS_RR_L, PI32V2::BLTS_RR, -1, -1, -1, 0, 3, {0, 1, 2}},
+    {PI32V2::BLTS_RR_L, PI32V2::BLTS_RR, 0, 1, -1, 0, 3, {0, 1, 2}},
+    {PI32V2::BLT_RI_L, PI32V2::BLT_RI, -1, -1, -1, 0, 3, {0, 1, 2}},
+    {PI32V2::BLT_RR_L, PI32V2::BLT_RR, -1, -1, -1, 0, 3, {0, 1, 2}},
+    {PI32V2::BLT_RR_L, PI32V2::BLT_RR, 0, 1, -1, 0, 3, {0, 1, 2}},
+    {PI32V2::BNE_RI, PI32V2::BNEZ, -1, -1, 1, 0, 2, {0, 2}},
+    {PI32V2::BNE_RI_L, PI32V2::BNEZ, -1, -1, 1, 0, 2, {0, 2}},
+    {PI32V2::BNE_RI_L, PI32V2::BNE_RI, -1, -1, -1, 0, 3, {0, 1, 2}},
+    {PI32V2::BNE_RR_L, PI32V2::BNE_RR, -1, -1, -1, 0, 3, {0, 1, 2}},
+    {PI32V2::BNE_RR_L, PI32V2::BNE_RR, 0, 1, -1, 0, 3, {0, 1, 2}},
     {PI32V2::LD_BU_L, PI32V2::LD_BU, -1, -1, -1, 0, 3, {0, 1, 2}},
     {PI32V2::LD_BU_L, PI32V2::LD_BU, 0, 1, -1, 0, 3, {0, 1, 2}},
     {PI32V2::LD_HU_L, PI32V2::LD_HU, -1, -1, -1, 0, 3, {0, 1, 2}},
@@ -77,6 +132,10 @@ static bool immFits(unsigned Opc, unsigned OpNo, int64_t V) {
     if (OpNo == 1)
       return fitsNum(V, 0, 7, 1, 0, 0, 0);
     return true;
+  case PI32V2::ADD_SP_I:
+    if (OpNo == 0)
+      return fitsNum(V, 1, 8, 4, 0, 0, 0);
+    return true;
   case PI32V2::AND_INVBIT:
     if (OpNo == 2)
       return (uint64_t(V) >> 32) == 0 && llvm::isPowerOf2_32(~uint32_t(V));
@@ -84,6 +143,46 @@ static bool immFits(unsigned Opc, unsigned OpNo, int64_t V) {
   case PI32V2::ASR_RRI:
     if (OpNo == 2)
       return fitsNum(V, 0, 5, 1, 0, 1, 32);
+    return true;
+  case PI32V2::BEQ_RI:
+    if (OpNo == 1)
+      return fitsNum(V, 1, 10, 1, 0, 0, 0);
+    return true;
+  case PI32V2::BGES_RI:
+    if (OpNo == 1)
+      return fitsNum(V, 1, 10, 1, 0, 0, 0);
+    return true;
+  case PI32V2::BGE_RI:
+    if (OpNo == 1)
+      return fitsNum(V, 0, 10, 1, 0, 0, 0);
+    return true;
+  case PI32V2::BGTS_RI:
+    if (OpNo == 1)
+      return fitsNum(V, 1, 10, 1, 0, 0, 0);
+    return true;
+  case PI32V2::BGT_RI:
+    if (OpNo == 1)
+      return fitsNum(V, 0, 10, 1, 0, 0, 0);
+    return true;
+  case PI32V2::BLES_RI:
+    if (OpNo == 1)
+      return fitsNum(V, 1, 10, 1, 0, 0, 0);
+    return true;
+  case PI32V2::BLE_RI:
+    if (OpNo == 1)
+      return fitsNum(V, 0, 10, 1, 0, 0, 0);
+    return true;
+  case PI32V2::BLTS_RI:
+    if (OpNo == 1)
+      return fitsNum(V, 1, 10, 1, 0, 0, 0);
+    return true;
+  case PI32V2::BLT_RI:
+    if (OpNo == 1)
+      return fitsNum(V, 0, 10, 1, 0, 0, 0);
+    return true;
+  case PI32V2::BNE_RI:
+    if (OpNo == 1)
+      return fitsNum(V, 1, 10, 1, 0, 0, 0);
     return true;
   case PI32V2::LD_BU:
     if (OpNo == 2)
