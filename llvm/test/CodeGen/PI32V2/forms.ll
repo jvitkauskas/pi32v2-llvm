@@ -147,3 +147,23 @@ n:
   %r = tail call i32 @g(i32 %a)
   ret i32 %r
 }
+
+; A pointer walk: post-increment loads.
+; CHECK-LABEL: walk:
+; CHECK:      = [{{r[0-9]+}}++=4]
+define i32 @walk(ptr %p, i32 %n) nounwind {
+entry:
+  br label %loop
+loop:
+  %q = phi ptr [ %p, %entry ], [ %q1, %loop ]
+  %i = phi i32 [ 0, %entry ], [ %i1, %loop ]
+  %s = phi i32 [ 0, %entry ], [ %s1, %loop ]
+  %v = load i32, ptr %q
+  %s1 = add i32 %s, %v
+  %q1 = getelementptr i32, ptr %q, i32 1
+  %i1 = add i32 %i, 1
+  %c = icmp ne i32 %i1, %n
+  br i1 %c, label %loop, label %done
+done:
+  ret i32 %s1
+}

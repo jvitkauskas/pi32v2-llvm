@@ -130,6 +130,45 @@ void PI32V2DAGToDAGISel::Select(SDNode *N) {
                        CurDAG->getTargetConstant(0, DL, MVT::i32)));
     return;
   }
+  if (auto *LD = dyn_cast<LoadSDNode>(N);
+      LD && LD->getAddressingMode() == ISD::POST_INC) {
+    // value, new base, chain = [b++=n]
+    bool S = LD->getExtensionType() == ISD::SEXTLOAD;
+    unsigned Opc;
+    switch (LD->getMemoryVT().getSimpleVT().SimpleTy) {
+    case MVT::i8: Opc = S ? PI32V2::LDBS_POST : PI32V2::LDBU_POST; break;
+    case MVT::i16: Opc = S ? PI32V2::LDHS_POST : PI32V2::LDHU_POST; break;
+    default: Opc = PI32V2::LDW_POST; break;
+    }
+    SDLoc DL(N);
+    SDValue Step = CurDAG->getSignedTargetConstant(
+        cast<ConstantSDNode>(LD->getOffset())->getSExtValue(), DL, MVT::i32);
+    MachineSDNode *M = CurDAG->getMachineNode(
+        Opc, DL, LD->getValueType(0), MVT::i32, MVT::Other,
+        {LD->getBasePtr(), Step, LD->getChain()});
+    CurDAG->setNodeMemRefs(M, {LD->getMemOperand()});
+    ReplaceNode(N, M);
+    return;
+  }
+  if (auto *ST = dyn_cast<StoreSDNode>(N);
+      ST && ST->getAddressingMode() == ISD::POST_INC) {
+    // new base, chain = ([b++=n] = v)
+    unsigned Opc;
+    switch (ST->getMemoryVT().getSimpleVT().SimpleTy) {
+    case MVT::i8: Opc = PI32V2::STB_POST; break;
+    case MVT::i16: Opc = PI32V2::STH_POST; break;
+    default: Opc = PI32V2::STW_POST; break;
+    }
+    SDLoc DL(N);
+    SDValue Step = CurDAG->getSignedTargetConstant(
+        cast<ConstantSDNode>(ST->getOffset())->getSExtValue(), DL, MVT::i32);
+    MachineSDNode *M = CurDAG->getMachineNode(
+        Opc, DL, MVT::i32, MVT::Other,
+        {ST->getBasePtr(), Step, ST->getValue(), ST->getChain()});
+    CurDAG->setNodeMemRefs(M, {ST->getMemOperand()});
+    ReplaceNode(N, M);
+    return;
+  }
   if (N->getOpcode() == ISD::UMUL_LOHI || N->getOpcode() == ISD::SMUL_LOHI) {
     // r(2n+1)_r(2n) = a * b: the low word in the even register.
     SDLoc DL(N);
