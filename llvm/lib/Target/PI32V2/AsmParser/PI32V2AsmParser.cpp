@@ -44,11 +44,11 @@ namespace {
 #define PI32V2_GEN_PARSER_TABLES
 #include "PI32V2ParserGen.inc"
 
-// A word character for canonical form and the spaces around numbers
-// (pi32v2isa.asm.WORDCH).
+// A word character for canonical form (pi32v2isa.asm.WORDCH, which in effect
+// is [A-Za-z0-9_.$@\\]).
 static bool isWordChar(char C) {
   return isAlnum(C) || C == '_' || C == '.' || C == '$' || C == '@' ||
-         C == '\\' || C == '-';
+         C == '\\';
 }
 // A character that may continue an identifier or number ([A-Za-z0-9_.$@]).
 static bool isIdentChar(char C) {
@@ -108,6 +108,19 @@ class PI32V2AsmParser : public MCTargetAsmParser {
   SmallVector<size_t, 16> PrefixLengths;
   std::optional<MCInst> Pending;
 
+  // Blocks: `rep ... {` and `if (...) {` up to their `}` (pi32v2isa.asm).
+  struct Block {
+    bool IsIf = false;
+    MCSymbol *Start = nullptr, *End = nullptr; // rep: the body
+    MCSymbol *Then = nullptr, *Else = nullptr; // if: the parts' lengths
+    unsigned Counts[2] = {0, 0};
+    bool InElse = false;
+    SMLoc Loc;
+  };
+  SmallVector<Block, 2> Blocks;
+  std::optional<Block> Opening; // the block the pending instruction opens
+  bool PendingPair = false;     // the previous instruction ended with '#'
+
   // Template matching.
   bool matchFrom(const PI32V2Template &T, StringRef Text, size_t TPos,
                  size_t Pos, SmallVectorImpl<SlotText> &Got) const;
@@ -133,6 +146,8 @@ public:
                   const MCInstrInfo &MII)
       : MCTargetAsmParser(STI, MII), Parser(P), MII(MII) {
     setAvailableFeatures(ComputeAvailableFeatures(STI.getFeatureBits()));
+    // Temporary labels are named .Ltmp<n>, as JieLi's assembler names them.
+    P.getContext().setUseNamesOnTempLabels(true);
     for (unsigned I = 0; I < std::size(Templates); ++I) {
       StringRef T = Templates[I].Text;
       size_t N = 0;
@@ -533,6 +548,21 @@ public:
       else if (Op == "*") K = MCBinaryExpr::Mul;
       else if (Op == "/") K = MCBinaryExpr::Div;
       else K = MCBinaryExpr::Mod;
+      // A comparison of two constants is 1 or 0, as in JieLi's assembler.
+      int64_t A, B;
+      bool Cmp = K == MCBinaryExpr::EQ || K == MCBinaryExpr::NE ||
+                 K == MCBinaryExpr::LT || K == MCBinaryExpr::LTE ||
+                 K == MCBinaryExpr::GT || K == MCBinaryExpr::GTE;
+      if (Cmp && L->evaluateAsAbsolute(A) && R->evaluateAsAbsolute(B)) {
+        bool V = K == MCBinaryExpr::EQ    ? A == B
+                 : K == MCBinaryExpr::NE  ? A != B
+                 : K == MCBinaryExpr::LT  ? A < B
+                 : K == MCBinaryExpr::LTE ? A <= B
+                 : K == MCBinaryExpr::GT  ? A > B
+                                          : A >= B;
+        L = MCConstantExpr::create(V, Ctx);
+        continue;
+      }
       L = MCBinaryExpr::create(K, L, R, Ctx);
     }
     return L;
@@ -769,8 +799,9 @@ bool PI32V2AsmParser::buildInst(const PI32V2Template &T, Value (&Fields)[26],
     case 1: {
       const PI32V2NumType &N = NumTypes[O.NumType];
       if (V.IsExpr) {
-        // Only branch targets and 32-bit constants take a symbol.
-        if (N.Kind != 5 && !N.Abs32)
+        // Only branch targets, 32-bit constants and block fields take a
+        // symbol.
+        if (N.Kind != 5 && !N.Abs32 && !O.Block)
           return false;
         Inst.addOperand(MCOperand::createExpr(V.Expr));
         break;
@@ -826,6 +857,44 @@ bool PI32V2AsmParser::parseInstruction(ParseInstructionInfo &Info,
       Raw = Raw.substr(0, P);
   }
   std::string Line = canonical(Raw);
+  Operands.push_back(std::make_unique<PI32V2Operand>(NameLoc));
+  MCContext &Ctx = getContext();
+
+  if (Line == "}") {
+    if (Blocks.empty())
+      return Error(NameLoc, "unmatched }");
+    Block B = Blocks.pop_back_val();
+    if (B.IsIf) {
+      unsigned Then = B.Counts[0], Else = B.Counts[1];
+      if (Then < 1 || Then > 4)
+        return Error(NameLoc, "if-clause out of range");
+      if (Else > 3 || (B.InElse && Else == 0))
+        return Error(NameLoc, "else-clause out of range");
+      B.Then->setVariableValue(MCConstantExpr::create(Then, Ctx));
+      B.Else->setVariableValue(MCConstantExpr::create(Else, Ctx));
+    } else {
+      getParser().getStreamer().emitLabel(B.End);
+    }
+    return false;
+  }
+  if (Line == "}else{") {
+    if (Blocks.empty() || !Blocks.back().IsIf || Blocks.back().InElse)
+      return Error(NameLoc, "else without if");
+    if (Blocks.back().Counts[0] == 0)
+      return Error(NameLoc, "if-clause out of range");
+    Blocks.back().InElse = true;
+    return false;
+  }
+  Opening.reset();
+  if (!Line.empty() && Line.back() == '{') {
+    Block B;
+    B.Loc = NameLoc;
+    B.Start = Ctx.createTempSymbol();
+    B.End = Ctx.createTempSymbol();
+    B.Then = Ctx.createTempSymbol();
+    B.Else = Ctx.createTempSymbol();
+    Opening = B;
+  }
 
   struct Reading {
     unsigned Index;
@@ -859,6 +928,25 @@ bool PI32V2AsmParser::parseInstruction(ParseInstructionInfo &Info,
           continue;
         if (!Fixed && !T.Abs32 && !T.Branch)
           continue;
+        if (T.Body || T.Then) {
+          if (!Opening)
+            continue; // a block opener only at the end of its line
+          MCContext &Ctx = getContext();
+          if (T.Body) {
+            Value &B = Fields[T.Body - 'a'];
+            B.IsExpr = true;
+            B.Expr = MCBinaryExpr::createSub(
+                MCSymbolRefExpr::create(Opening->End, Ctx),
+                MCSymbolRefExpr::create(Opening->Start, Ctx), Ctx);
+          } else {
+            Value &A = Fields[T.Then - 'a'], &B = Fields[T.Else - 'a'];
+            A.IsExpr = B.IsExpr = true;
+            A.Expr = MCSymbolRefExpr::create(Opening->Then, Ctx);
+            B.Expr = MCSymbolRefExpr::create(Opening->Else, Ctx);
+          }
+        } else if (Opening && Line.back() == '{') {
+          continue; // a line ending with { opens a block
+        }
         MCInst Inst;
         if (!buildInst(T, Fields, Inst))
           continue;
@@ -943,7 +1031,21 @@ bool PI32V2AsmParser::parseInstruction(ParseInstructionInfo &Info,
            std::make_tuple(Y.Size, Y.Alias, Y.Tie, Y.Order);
   });
   Pending = Good.front().Inst;
-  Operands.push_back(std::make_unique<PI32V2Operand>(NameLoc));
+  const PI32V2Template &Chosen = Templates[Good.front().Index];
+  bool Pair = Line.back() == '#';
+  if (Opening) {
+    Opening->IsIf = Chosen.Then != 0;
+    // Blocks do not nest, except a rep inside nothing and an if inside a rep.
+    if (!Blocks.empty() && (Opening->IsIf ? llvm::any_of(Blocks, [](const Block &B) {
+                                                return B.IsIf;
+                                              })
+                                          : true))
+      return Error(NameLoc, Opening->IsIf ? "invalid location of it block"
+                                          : "invalid location of REP");
+  }
+  if (!Blocks.empty() && Blocks.back().IsIf && !PendingPair)
+    ++Blocks.back().Counts[Blocks.back().InElse];
+  PendingPair = Pair && !Opening;
   return false;
 }
 
@@ -953,12 +1055,18 @@ bool PI32V2AsmParser::matchAndEmitInstruction(SMLoc IDLoc, unsigned &Opcode,
                                               uint64_t &ErrorInfo,
                                               bool MatchingInlineAsm) {
   if (!Pending)
-    return Error(IDLoc, "no instruction");
+    return false; // a block's } or } else {
   MCInst Inst = *Pending;
   Pending.reset();
   Inst.setLoc(IDLoc);
   Opcode = Inst.getOpcode();
   Out.emitInstruction(Inst, getSTI());
+  if (Opening) {
+    if (!Opening->IsIf)
+      Out.emitLabel(Opening->Start);
+    Blocks.push_back(*Opening);
+    Opening.reset();
+  }
   return false;
 }
 

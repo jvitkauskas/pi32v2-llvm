@@ -25,4 +25,6 @@ PI32V2MCAsmInfo::PI32V2MCAsmInfo(const Triple &TT,
   ExceptionsType = ExceptionHandling::DwarfCFI;
   UsesELFSectionDirectiveForBSS = true;
   MinInstAlignment = 2;
+  AllowAtInName = true;
+  UseAtForSpecifier = true; // lets the lexer keep @ in names (_x@y:)
 }

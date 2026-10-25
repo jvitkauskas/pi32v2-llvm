@@ -9,144 +9,822 @@
   fixup_pi32v2_5,
   fixup_pi32v2_6,
   fixup_pi32v2_7,
+  fixup_pi32v2_8,
+  fixup_pi32v2_9,
+  fixup_pi32v2_10,
 #endif
 #ifdef PI32V2_GEN_FIXUP_TABLE
 #undef PI32V2_GEN_FIXUP_TABLE
-// instruction bytes, pc-relative, ELF relocation (0: must resolve in the assembler), field width,
-// the Inst bits of the field (most significant first)
+// name, instruction bytes, pc-relative, ELF relocation (0: resolved by the assembler), scale,
+// add, signed, field width, the Inst bits of the field (most significant first)
 static const PI32V2FixupLayout FixupLayouts[] = {
-    {"fixup_pi32v2_0", 6, 0, 5, 32, {15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0, 31, 30, 29, 28, 27, 26, 25, 24, 23, 22, 21, 20, 19, 18, 17, 16}},
-    {"fixup_pi32v2_1", 2, 1, 0, 8, {6, 5, 4, 12, 11, 10, 9, 8}},
-    {"fixup_pi32v2_2", 2, 1, 0, 11, {1, 0, 7, 6, 5, 4, 12, 11, 10, 9, 8}},
-    {"fixup_pi32v2_3", 4, 1, 2, 22, {21, 20, 19, 18, 17, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0}},
-    {"fixup_pi32v2_4", 4, 1, 0, 9, {8, 7, 6, 5, 4, 3, 2, 1, 0}},
-    {"fixup_pi32v2_5", 4, 1, 1, 16, {15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0}},
-    {"fixup_pi32v2_6", 6, 1, 3, 16, {15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0}},
-    {"fixup_pi32v2_7", 6, 1, 4, 31, {15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0, 31, 30, 29, 28, 27, 26, 25, 24, 23, 22, 21, 20, 19, 18, 17}},
+    {"fixup_pi32v2_0", 6, 0, 5, 1, 0, 0, 32, {15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0, 31, 30, 29, 28, 27, 26, 25, 24, 23, 22, 21, 20, 19, 18, 17, 16}},
+    {"fixup_pi32v2_1", 2, 1, 0, 2, 2, 1, 8, {6, 5, 4, 12, 11, 10, 9, 8}},
+    {"fixup_pi32v2_2", 2, 1, 0, 2, 2, 1, 11, {1, 0, 7, 6, 5, 4, 12, 11, 10, 9, 8}},
+    {"fixup_pi32v2_3", 4, 1, 2, 2, 4, 1, 22, {21, 20, 19, 18, 17, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0}},
+    {"fixup_pi32v2_4", 2, 0, 0, 2, 2, 0, 4, {7, 6, 5, 4}},
+    {"fixup_pi32v2_5", 4, 1, 0, 2, 4, 1, 9, {8, 7, 6, 5, 4, 3, 2, 1, 0}},
+    {"fixup_pi32v2_6", 4, 0, 0, 1, 1, 0, 2, {15, 14}},
+    {"fixup_pi32v2_7", 4, 0, 0, 1, 0, 0, 2, {13, 12}},
+    {"fixup_pi32v2_8", 4, 1, 1, 2, 4, 1, 16, {15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0}},
+    {"fixup_pi32v2_9", 6, 1, 3, 2, 6, 1, 16, {15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0}},
+    {"fixup_pi32v2_10", 6, 1, 4, 2, 6, 1, 31, {15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0, 31, 30, 29, 28, 27, 26, 25, 24, 23, 22, 21, 20, 19, 18, 17}},
 };
 #endif
-#ifdef PI32V2_GEN_FIXUP_FOR_OPCODE
-#undef PI32V2_GEN_FIXUP_FOR_OPCODE
-static int fixupForOpcode(unsigned Opcode) {
+#ifdef PI32V2_GEN_FIXUP_FOR_OPERAND
+#undef PI32V2_GEN_FIXUP_FOR_OPERAND
+static int fixupForOperand(unsigned Opcode, unsigned OpNo) {
   switch (Opcode) {
   case PI32V2::LI_U32:
+    if (OpNo == 1)
+      return 0;
+    return -1;
   case PI32V2::LI_SR_U32:
-    return 0;
+    if (OpNo == 1)
+      return 0;
+    return -1;
   case PI32V2::BEQZ:
+    if (OpNo == 1)
+      return 1;
+    return -1;
   case PI32V2::BNEZ:
-  case PI32V2::CALL_S:
-    return 1;
+    if (OpNo == 1)
+      return 1;
+    return -1;
   case PI32V2::GOTO_S:
-    return 2;
+    if (OpNo == 0)
+      return 2;
+    return -1;
+  case PI32V2::CALL_S:
+    if (OpNo == 0)
+      return 1;
+    return -1;
   case PI32V2::CALL_L:
+    if (OpNo == 0)
+      return 3;
+    return -1;
   case PI32V2::GOTO_L:
-    return 3;
+    if (OpNo == 0)
+      return 3;
+    return -1;
+  case PI32V2::REP:
+    if (OpNo == 0)
+      return 4;
+    return -1;
+  case PI32V2::REP_I:
+    if (OpNo == 0)
+      return 4;
+    return -1;
   case PI32V2::BEQ_RR:
+    if (OpNo == 2)
+      return 5;
+    return -1;
   case PI32V2::BFEQ_RR:
-  case PI32V2::IFS2NS_C:
-  case PI32V2::IFS2NS_S:
-  case PI32V2::BEQ_AND_RI:
-  case PI32V2::BNE_AND_RI:
-  case PI32V2::BNE_RR:
-  case PI32V2::BFUNE_RR:
-  case PI32V2::BGE_RR:
-  case PI32V2::BFUGE_RR:
-  case PI32V2::BLT_RR:
-  case PI32V2::BFLT_RR:
-  case PI32V2::BGT_RR:
-  case PI32V2::BFUGT_RR:
-  case PI32V2::BLE_RR:
-  case PI32V2::BFLE_RR:
-  case PI32V2::BGES_RR:
-  case PI32V2::BFGE_RR:
-  case PI32V2::BLTS_RR:
-  case PI32V2::BFULT_RR:
-  case PI32V2::BGTS_RR:
-  case PI32V2::BFGT_RR:
-  case PI32V2::BLES_RR:
-  case PI32V2::BFULE_RR:
-  case PI32V2::BEQ_RI:
-  case PI32V2::BNE_RI:
-  case PI32V2::BGE_RI:
-  case PI32V2::BLT_RI:
-  case PI32V2::BGT_RI:
-  case PI32V2::BLE_RI:
-  case PI32V2::BGES_RI:
-  case PI32V2::BLTS_RI:
-  case PI32V2::BGTS_RI:
-  case PI32V2::BLES_RI:
-    return 4;
+    if (OpNo == 2)
+      return 5;
+    return -1;
+  case PI32V2::IF_EQ_RR:
+    if (OpNo == 2)
+      return 6;
+    if (OpNo == 3)
+      return 7;
+    return -1;
+  case PI32V2::IFF_EQ_RR:
+    if (OpNo == 2)
+      return 6;
+    if (OpNo == 3)
+      return 7;
+    return -1;
+  case PI32V2::IF_EQ_RI_MODIMM:
+    if (OpNo == 2)
+      return 6;
+    if (OpNo == 3)
+      return 7;
+    return -1;
+  case PI32V2::IF_EQ_RI_S12:
+    if (OpNo == 2)
+      return 6;
+    if (OpNo == 3)
+      return 7;
+    return -1;
   case PI32V2::BC_EQ:
+    if (OpNo == 0)
+      return 8;
+    return -1;
+  case PI32V2::IFS2NS_C:
+    if (OpNo == 0)
+      return 5;
+    return -1;
+  case PI32V2::IFS2NS_S:
+    if (OpNo == 0)
+      return 5;
+    return -1;
+  case PI32V2::BEQ_AND_RI:
+    if (OpNo == 2)
+      return 5;
+    return -1;
+  case PI32V2::BNE_AND_RI:
+    if (OpNo == 2)
+      return 5;
+    return -1;
+  case PI32V2::BNE_RR:
+    if (OpNo == 2)
+      return 5;
+    return -1;
+  case PI32V2::BFUNE_RR:
+    if (OpNo == 2)
+      return 5;
+    return -1;
+  case PI32V2::IF_NE_RR:
+    if (OpNo == 2)
+      return 6;
+    if (OpNo == 3)
+      return 7;
+    return -1;
+  case PI32V2::IFF_UNE_RR:
+    if (OpNo == 2)
+      return 6;
+    if (OpNo == 3)
+      return 7;
+    return -1;
+  case PI32V2::IF_NE_RI_MODIMM:
+    if (OpNo == 2)
+      return 6;
+    if (OpNo == 3)
+      return 7;
+    return -1;
+  case PI32V2::IF_NE_RI_S12:
+    if (OpNo == 2)
+      return 6;
+    if (OpNo == 3)
+      return 7;
+    return -1;
   case PI32V2::BC_NE:
+    if (OpNo == 0)
+      return 8;
+    return -1;
+  case PI32V2::BGE_RR:
+    if (OpNo == 2)
+      return 5;
+    return -1;
+  case PI32V2::BFUGE_RR:
+    if (OpNo == 2)
+      return 5;
+    return -1;
+  case PI32V2::IF_GE_RR:
+    if (OpNo == 2)
+      return 6;
+    if (OpNo == 3)
+      return 7;
+    return -1;
+  case PI32V2::IFF_UGE_RR:
+    if (OpNo == 2)
+      return 6;
+    if (OpNo == 3)
+      return 7;
+    return -1;
+  case PI32V2::IF_GE_RI_MODIMM:
+    if (OpNo == 2)
+      return 6;
+    if (OpNo == 3)
+      return 7;
+    return -1;
+  case PI32V2::IF_GE_RI_S12:
+    if (OpNo == 2)
+      return 6;
+    if (OpNo == 3)
+      return 7;
+    return -1;
   case PI32V2::BC_CS:
+    if (OpNo == 0)
+      return 8;
+    return -1;
+  case PI32V2::BLT_RR:
+    if (OpNo == 2)
+      return 5;
+    return -1;
+  case PI32V2::BFLT_RR:
+    if (OpNo == 2)
+      return 5;
+    return -1;
+  case PI32V2::IF_LT_RR:
+    if (OpNo == 2)
+      return 6;
+    if (OpNo == 3)
+      return 7;
+    return -1;
+  case PI32V2::IFF_LT_RR:
+    if (OpNo == 2)
+      return 6;
+    if (OpNo == 3)
+      return 7;
+    return -1;
+  case PI32V2::IF_LT_RI_MODIMM:
+    if (OpNo == 2)
+      return 6;
+    if (OpNo == 3)
+      return 7;
+    return -1;
+  case PI32V2::IF_LT_RI_S12:
+    if (OpNo == 2)
+      return 6;
+    if (OpNo == 3)
+      return 7;
+    return -1;
   case PI32V2::BC_CC:
+    if (OpNo == 0)
+      return 8;
+    return -1;
   case PI32V2::DBNZ_R:
+    if (OpNo == 1)
+      return 8;
+    return -1;
+  case PI32V2::IF_EQ_AND_RR:
+    if (OpNo == 2)
+      return 6;
+    if (OpNo == 3)
+      return 7;
+    return -1;
+  case PI32V2::IF_NE_AND_RR:
+    if (OpNo == 2)
+      return 6;
+    if (OpNo == 3)
+      return 7;
+    return -1;
+  case PI32V2::IFF_NE_RR_6:
+    if (OpNo == 2)
+      return 6;
+    if (OpNo == 3)
+      return 7;
+    return -1;
+  case PI32V2::IFF_NE_RR_5:
+    if (OpNo == 2)
+      return 6;
+    if (OpNo == 3)
+      return 7;
+    return -1;
+  case PI32V2::IFF_NE_RR_4:
+    if (OpNo == 2)
+      return 6;
+    if (OpNo == 3)
+      return 7;
+    return -1;
+  case PI32V2::IFF_NE_RR_3:
+    if (OpNo == 2)
+      return 6;
+    if (OpNo == 3)
+      return 7;
+    return -1;
+  case PI32V2::IFF_NE_RR_2:
+    if (OpNo == 2)
+      return 6;
+    if (OpNo == 3)
+      return 7;
+    return -1;
+  case PI32V2::IFF_NE_RR_1:
+    if (OpNo == 2)
+      return 6;
+    if (OpNo == 3)
+      return 7;
+    return -1;
+  case PI32V2::IF_EQ_AND_RM:
+    if (OpNo == 2)
+      return 6;
+    if (OpNo == 3)
+      return 7;
+    return -1;
+  case PI32V2::IF_NE_AND_RM:
+    if (OpNo == 2)
+      return 6;
+    if (OpNo == 3)
+      return 7;
+    return -1;
+  case PI32V2::BGT_RR:
+    if (OpNo == 2)
+      return 5;
+    return -1;
+  case PI32V2::BFUGT_RR:
+    if (OpNo == 2)
+      return 5;
+    return -1;
+  case PI32V2::IF_GT_RR:
+    if (OpNo == 2)
+      return 6;
+    if (OpNo == 3)
+      return 7;
+    return -1;
+  case PI32V2::IFF_UGT_RR:
+    if (OpNo == 2)
+      return 6;
+    if (OpNo == 3)
+      return 7;
+    return -1;
+  case PI32V2::IF_GT_RI_MODIMM:
+    if (OpNo == 2)
+      return 6;
+    if (OpNo == 3)
+      return 7;
+    return -1;
+  case PI32V2::IF_GT_RI_S12:
+    if (OpNo == 2)
+      return 6;
+    if (OpNo == 3)
+      return 7;
+    return -1;
   case PI32V2::BC_HI:
+    if (OpNo == 0)
+      return 8;
+    return -1;
+  case PI32V2::BLE_RR:
+    if (OpNo == 2)
+      return 5;
+    return -1;
+  case PI32V2::BFLE_RR:
+    if (OpNo == 2)
+      return 5;
+    return -1;
+  case PI32V2::IF_LE_RR:
+    if (OpNo == 2)
+      return 6;
+    if (OpNo == 3)
+      return 7;
+    return -1;
+  case PI32V2::IFF_LE_RR:
+    if (OpNo == 2)
+      return 6;
+    if (OpNo == 3)
+      return 7;
+    return -1;
+  case PI32V2::IF_LE_RI_MODIMM:
+    if (OpNo == 2)
+      return 6;
+    if (OpNo == 3)
+      return 7;
+    return -1;
+  case PI32V2::IF_LE_RI_S12:
+    if (OpNo == 2)
+      return 6;
+    if (OpNo == 3)
+      return 7;
+    return -1;
   case PI32V2::BC_LS:
+    if (OpNo == 0)
+      return 8;
+    return -1;
+  case PI32V2::BGES_RR:
+    if (OpNo == 2)
+      return 5;
+    return -1;
+  case PI32V2::BFGE_RR:
+    if (OpNo == 2)
+      return 5;
+    return -1;
+  case PI32V2::IFS_GE_RR:
+    if (OpNo == 2)
+      return 6;
+    if (OpNo == 3)
+      return 7;
+    return -1;
+  case PI32V2::IFF_GE_RR:
+    if (OpNo == 2)
+      return 6;
+    if (OpNo == 3)
+      return 7;
+    return -1;
+  case PI32V2::IFS_GE_RI_MODIMM:
+    if (OpNo == 2)
+      return 6;
+    if (OpNo == 3)
+      return 7;
+    return -1;
+  case PI32V2::IFS_GE_RI_S12:
+    if (OpNo == 2)
+      return 6;
+    if (OpNo == 3)
+      return 7;
+    return -1;
   case PI32V2::BC_GE:
+    if (OpNo == 0)
+      return 8;
+    return -1;
+  case PI32V2::BLTS_RR:
+    if (OpNo == 2)
+      return 5;
+    return -1;
+  case PI32V2::BFULT_RR:
+    if (OpNo == 2)
+      return 5;
+    return -1;
+  case PI32V2::IFS_LT_RR:
+    if (OpNo == 2)
+      return 6;
+    if (OpNo == 3)
+      return 7;
+    return -1;
+  case PI32V2::IFF_ULT_RR:
+    if (OpNo == 2)
+      return 6;
+    if (OpNo == 3)
+      return 7;
+    return -1;
+  case PI32V2::IFS_LT_RI_MODIMM:
+    if (OpNo == 2)
+      return 6;
+    if (OpNo == 3)
+      return 7;
+    return -1;
+  case PI32V2::IFS_LT_RI_S12:
+    if (OpNo == 2)
+      return 6;
+    if (OpNo == 3)
+      return 7;
+    return -1;
   case PI32V2::BC_LT:
+    if (OpNo == 0)
+      return 8;
+    return -1;
+  case PI32V2::BGTS_RR:
+    if (OpNo == 2)
+      return 5;
+    return -1;
+  case PI32V2::BFGT_RR:
+    if (OpNo == 2)
+      return 5;
+    return -1;
+  case PI32V2::IFS_GT_RR:
+    if (OpNo == 2)
+      return 6;
+    if (OpNo == 3)
+      return 7;
+    return -1;
+  case PI32V2::IFF_GT_RR:
+    if (OpNo == 2)
+      return 6;
+    if (OpNo == 3)
+      return 7;
+    return -1;
+  case PI32V2::IFS_GT_RI_MODIMM:
+    if (OpNo == 2)
+      return 6;
+    if (OpNo == 3)
+      return 7;
+    return -1;
+  case PI32V2::IFS_GT_RI_S12:
+    if (OpNo == 2)
+      return 6;
+    if (OpNo == 3)
+      return 7;
+    return -1;
   case PI32V2::BC_GT:
+    if (OpNo == 0)
+      return 8;
+    return -1;
+  case PI32V2::BLES_RR:
+    if (OpNo == 2)
+      return 5;
+    return -1;
+  case PI32V2::BFULE_RR:
+    if (OpNo == 2)
+      return 5;
+    return -1;
+  case PI32V2::IFS_LE_RR:
+    if (OpNo == 2)
+      return 6;
+    if (OpNo == 3)
+      return 7;
+    return -1;
+  case PI32V2::IFF_ULE_RR:
+    if (OpNo == 2)
+      return 6;
+    if (OpNo == 3)
+      return 7;
+    return -1;
+  case PI32V2::IFS_LE_RI_MODIMM:
+    if (OpNo == 2)
+      return 6;
+    if (OpNo == 3)
+      return 7;
+    return -1;
+  case PI32V2::IFS_LE_RI_S12:
+    if (OpNo == 2)
+      return 6;
+    if (OpNo == 3)
+      return 7;
+    return -1;
   case PI32V2::BC_LE:
+    if (OpNo == 0)
+      return 8;
+    return -1;
+  case PI32V2::BEQ_RI:
+    if (OpNo == 2)
+      return 5;
+    return -1;
+  case PI32V2::BNE_RI:
+    if (OpNo == 2)
+      return 5;
+    return -1;
+  case PI32V2::BGE_RI:
+    if (OpNo == 2)
+      return 5;
+    return -1;
+  case PI32V2::BLT_RI:
+    if (OpNo == 2)
+      return 5;
+    return -1;
+  case PI32V2::BGT_RI:
+    if (OpNo == 2)
+      return 5;
+    return -1;
+  case PI32V2::BLE_RI:
+    if (OpNo == 2)
+      return 5;
+    return -1;
+  case PI32V2::BGES_RI:
+    if (OpNo == 2)
+      return 5;
+    return -1;
+  case PI32V2::BLTS_RI:
+    if (OpNo == 2)
+      return 5;
+    return -1;
+  case PI32V2::BGTS_RI:
+    if (OpNo == 2)
+      return 5;
+    return -1;
+  case PI32V2::BLES_RI:
+    if (OpNo == 2)
+      return 5;
+    return -1;
   case PI32V2::BEQ_AND_RR:
+    if (OpNo == 2)
+      return 8;
+    return -1;
   case PI32V2::BNE_AND_RR:
-    return 5;
+    if (OpNo == 2)
+      return 8;
+    return -1;
   case PI32V2::BEQ_RI_L:
+    if (OpNo == 2)
+      return 9;
+    return -1;
   case PI32V2::BEQ_RI_L_MODIMM:
+    if (OpNo == 2)
+      return 9;
+    return -1;
   case PI32V2::BNE_RI_L:
+    if (OpNo == 2)
+      return 9;
+    return -1;
   case PI32V2::BNE_RI_L_MODIMM:
+    if (OpNo == 2)
+      return 9;
+    return -1;
   case PI32V2::BGE_RI_L:
+    if (OpNo == 2)
+      return 9;
+    return -1;
   case PI32V2::BGE_RI_L_MODIMM:
+    if (OpNo == 2)
+      return 9;
+    return -1;
   case PI32V2::BLT_RI_L:
+    if (OpNo == 2)
+      return 9;
+    return -1;
   case PI32V2::BLT_RI_L_MODIMM:
+    if (OpNo == 2)
+      return 9;
+    return -1;
   case PI32V2::BGT_RI_L:
+    if (OpNo == 2)
+      return 9;
+    return -1;
   case PI32V2::BGT_RI_L_MODIMM:
+    if (OpNo == 2)
+      return 9;
+    return -1;
   case PI32V2::BLE_RI_L:
+    if (OpNo == 2)
+      return 9;
+    return -1;
   case PI32V2::BLE_RI_L_MODIMM:
+    if (OpNo == 2)
+      return 9;
+    return -1;
   case PI32V2::BGES_RI_L:
+    if (OpNo == 2)
+      return 9;
+    return -1;
   case PI32V2::BGES_RI_L_MODIMM:
+    if (OpNo == 2)
+      return 9;
+    return -1;
   case PI32V2::BLTS_RI_L:
+    if (OpNo == 2)
+      return 9;
+    return -1;
   case PI32V2::BLTS_RI_L_MODIMM:
+    if (OpNo == 2)
+      return 9;
+    return -1;
   case PI32V2::BGTS_RI_L:
+    if (OpNo == 2)
+      return 9;
+    return -1;
   case PI32V2::BGTS_RI_L_MODIMM:
+    if (OpNo == 2)
+      return 9;
+    return -1;
   case PI32V2::BLES_RI_L:
+    if (OpNo == 2)
+      return 9;
+    return -1;
   case PI32V2::BLES_RI_L_MODIMM:
+    if (OpNo == 2)
+      return 9;
+    return -1;
   case PI32V2::BEQ_RR_L:
+    if (OpNo == 2)
+      return 9;
+    return -1;
   case PI32V2::BNE_RR_L:
+    if (OpNo == 2)
+      return 9;
+    return -1;
   case PI32V2::BGE_RR_L:
+    if (OpNo == 2)
+      return 9;
+    return -1;
   case PI32V2::BLT_RR_L:
+    if (OpNo == 2)
+      return 9;
+    return -1;
   case PI32V2::BGT_RR_L:
+    if (OpNo == 2)
+      return 9;
+    return -1;
   case PI32V2::BLE_RR_L:
+    if (OpNo == 2)
+      return 9;
+    return -1;
   case PI32V2::BGES_RR_L:
+    if (OpNo == 2)
+      return 9;
+    return -1;
   case PI32V2::BLTS_RR_L:
+    if (OpNo == 2)
+      return 9;
+    return -1;
   case PI32V2::BGTS_RR_L:
+    if (OpNo == 2)
+      return 9;
+    return -1;
   case PI32V2::BLES_RR_L:
+    if (OpNo == 2)
+      return 9;
+    return -1;
   case PI32V2::BFEQ_RR_L:
+    if (OpNo == 2)
+      return 9;
+    return -1;
   case PI32V2::BFUNE_RR_L:
+    if (OpNo == 2)
+      return 9;
+    return -1;
   case PI32V2::BFUGE_RR_L:
+    if (OpNo == 2)
+      return 9;
+    return -1;
   case PI32V2::BFLT_RR_L:
+    if (OpNo == 2)
+      return 9;
+    return -1;
   case PI32V2::BFUGT_RR_L:
+    if (OpNo == 2)
+      return 9;
+    return -1;
   case PI32V2::BFLE_RR_L:
+    if (OpNo == 2)
+      return 9;
+    return -1;
   case PI32V2::BFGE_RR_L:
+    if (OpNo == 2)
+      return 9;
+    return -1;
   case PI32V2::BFULT_RR_L:
+    if (OpNo == 2)
+      return 9;
+    return -1;
   case PI32V2::BFGT_RR_L:
+    if (OpNo == 2)
+      return 9;
+    return -1;
   case PI32V2::BFULE_RR_L:
-  case PI32V2::BEQ_AND_MODIMM_RI_L:
-  case PI32V2::BNE_AND_MODIMM_RI_L:
-  case PI32V2::BUNKNOWN_RI_L_4TO7:
-  case PI32V2::BUNKNOWN_RR_L_4TO7:
-  case PI32V2::BUNKNOWN_RI_L_14TO15:
-  case PI32V2::BUNKNOWN_RR_L_14TO15:
-  case PI32V2::BFNE_RR_L:
-  case PI32V2::BFUEQ_RR_L:
-  case PI32V2::BFUNO_RR_L:
-  case PI32V2::BFORD_RR_L:
-  case PI32V2::BUNKNOWN_RI_L_4TO7_MODIMM:
-  case PI32V2::BUNKNOWN_RI_L_14TO15_MODIMM:
-  case PI32V2::BFUNKNOWN_RR_L:
-    return 6;
+    if (OpNo == 2)
+      return 9;
+    return -1;
   case PI32V2::CALL_XL:
+    if (OpNo == 0)
+      return 10;
+    return -1;
   case PI32V2::GOTOSS_XL:
-    return 7;
+    if (OpNo == 0)
+      return 10;
+    return -1;
+  case PI32V2::BEQ_AND_MODIMM_RI_L:
+    if (OpNo == 2)
+      return 9;
+    return -1;
+  case PI32V2::BNE_AND_MODIMM_RI_L:
+    if (OpNo == 2)
+      return 9;
+    return -1;
+  case PI32V2::BUNKNOWN_RI_L_4TO7:
+    if (OpNo == 2)
+      return 9;
+    return -1;
+  case PI32V2::BUNKNOWN_RR_L_4TO7:
+    if (OpNo == 2)
+      return 9;
+    return -1;
+  case PI32V2::BUNKNOWN_RI_L_14TO15:
+    if (OpNo == 2)
+      return 9;
+    return -1;
+  case PI32V2::BUNKNOWN_RR_L_14TO15:
+    if (OpNo == 2)
+      return 9;
+    return -1;
+  case PI32V2::BFNE_RR_L:
+    if (OpNo == 2)
+      return 9;
+    return -1;
+  case PI32V2::BFUEQ_RR_L:
+    if (OpNo == 2)
+      return 9;
+    return -1;
+  case PI32V2::BFUNO_RR_L:
+    if (OpNo == 2)
+      return 9;
+    return -1;
+  case PI32V2::BFORD_RR_L:
+    if (OpNo == 2)
+      return 9;
+    return -1;
+  case PI32V2::IF_UNKNOWN_RR_1:
+    if (OpNo == 2)
+      return 6;
+    if (OpNo == 3)
+      return 7;
+    return -1;
+  case PI32V2::IF_UNKNOWN_RR_2:
+    if (OpNo == 2)
+      return 6;
+    if (OpNo == 3)
+      return 7;
+    return -1;
+  case PI32V2::IF_UNKNOWN_RR_3:
+    if (OpNo == 2)
+      return 6;
+    if (OpNo == 3)
+      return 7;
+    return -1;
+  case PI32V2::IF_UNKNOWN_RR_4:
+    if (OpNo == 2)
+      return 6;
+    if (OpNo == 3)
+      return 7;
+    return -1;
+  case PI32V2::IF_UNKNOWN_RR_5:
+    if (OpNo == 2)
+      return 6;
+    if (OpNo == 3)
+      return 7;
+    return -1;
+  case PI32V2::IF_UNKNOWN_RR_6:
+    if (OpNo == 2)
+      return 6;
+    if (OpNo == 3)
+      return 7;
+    return -1;
+  case PI32V2::IF_UNKNOWN_RR_7:
+    if (OpNo == 2)
+      return 6;
+    if (OpNo == 3)
+      return 7;
+    return -1;
+  case PI32V2::BUNKNOWN_RI_L_4TO7_MODIMM:
+    if (OpNo == 2)
+      return 9;
+    return -1;
+  case PI32V2::BUNKNOWN_RI_L_14TO15_MODIMM:
+    if (OpNo == 2)
+      return 9;
+    return -1;
+  case PI32V2::BFUNKNOWN_RR_L:
+    if (OpNo == 2)
+      return 9;
+    return -1;
   default:
     return -1;
   }
