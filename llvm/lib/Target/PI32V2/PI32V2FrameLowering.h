@@ -35,6 +35,8 @@ public:
                               MutableArrayRef<CalleeSavedInfo> CSI,
                               const TargetRegisterInfo *TRI) const override;
   bool hasReservedCallFrame(const MachineFunction &MF) const override;
+  void determineCalleeSaves(MachineFunction &MF, BitVector &SavedRegs,
+                            RegScavenger *RS) const override;
 
 protected:
   bool hasFPImpl(const MachineFunction &MF) const override;

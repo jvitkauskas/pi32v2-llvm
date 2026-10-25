@@ -72,6 +72,11 @@ public:
     return getTM<PI32V2TargetMachine>();
   }
 
+  void addIRPasses() override {
+    addPass(createAtomicExpandLegacyPass());
+    TargetPassConfig::addIRPasses();
+  }
+
   bool addInstSelector() override {
     addPass(createPI32V2ISelDag(getPI32V2TargetMachine(), getOptLevel()));
     return false;

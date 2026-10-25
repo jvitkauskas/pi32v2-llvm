@@ -27,3 +27,6 @@ def RetCC_PI32V2 : CallingConv<[
 ]>;
 
 def CSR_PI32V2 : CalleeSavedRegs<(add RETS, (sequence "R%u", 15, 4))>;
+// An interrupt handler saves every register it changes (psr and reti are
+// saved by its prologue, PI32V2FrameLowering).
+def CSR_PI32V2_Interrupt : CalleeSavedRegs<(add RETS, (sequence "R%u", 15, 0))>;

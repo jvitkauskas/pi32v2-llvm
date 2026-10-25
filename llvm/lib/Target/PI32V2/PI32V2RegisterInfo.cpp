@@ -26,6 +26,8 @@ PI32V2RegisterInfo::PI32V2RegisterInfo() : PI32V2GenRegisterInfo(PI32V2::RETS) {
 
 const MCPhysReg *
 PI32V2RegisterInfo::getCalleeSavedRegs(const MachineFunction *MF) const {
+  if (MF && MF->getFunction().hasFnAttribute("interrupt"))
+    return CSR_PI32V2_Interrupt_SaveList;
   return CSR_PI32V2_SaveList;
 }
 

@@ -13,6 +13,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "MCTargetDesc/PI32V2BaseInfo.h"
+#include "MCTargetDesc/PI32V2InstPrinter.h"
 #include "MCTargetDesc/PI32V2MCTargetDesc.h"
 #include "PI32V2.h"
 #include "PI32V2TargetMachine.h"
@@ -49,6 +50,8 @@ public:
 
   StringRef getPassName() const override { return "PI32V2 Assembly Printer"; }
   void emitInstruction(const MachineInstr *MI) override;
+  bool PrintAsmOperand(const MachineInstr *MI, unsigned OpNo,
+                       const char *ExtraCode, raw_ostream &OS) override;
 
 private:
   MCOperand lowerSymbol(const MachineOperand &MO, MCSymbol *Sym) const;
@@ -107,6 +110,27 @@ bool PI32V2AsmPrinter::lowerOperand(const MachineOperand &MO,
   }
 }
 
+// An inline asm operand: a register by its name, a number, a symbol.
+bool PI32V2AsmPrinter::PrintAsmOperand(const MachineInstr *MI, unsigned OpNo,
+                                       const char *ExtraCode, raw_ostream &OS) {
+  if (ExtraCode && ExtraCode[0])
+    return AsmPrinter::PrintAsmOperand(MI, OpNo, ExtraCode, OS);
+  const MachineOperand &MO = MI->getOperand(OpNo);
+  switch (MO.getType()) {
+  case MachineOperand::MO_Register:
+    OS << PI32V2InstPrinter::getRegisterName(MO.getReg());
+    return false;
+  case MachineOperand::MO_Immediate:
+    OS << MO.getImm();
+    return false;
+  case MachineOperand::MO_GlobalAddress:
+    PrintSymbolOperand(MO, OS);
+    return false;
+  default:
+    return true;
+  }
+}
+
 void PI32V2AsmPrinter::emitInstruction(const MachineInstr *MI) {
   MCInst Inst;
   unsigned Opc = MI->getOpcode();
@@ -118,7 +142,9 @@ void PI32V2AsmPrinter::emitInstruction(const MachineInstr *MI) {
     Opc = PI32V2::CALL_R;
     break;
   case PI32V2::PseudoRET:
-    Inst.setOpcode(PI32V2::RTS);
+    // an interrupt handler returns to reti
+    Inst.setOpcode(MF->getFunction().hasFnAttribute("interrupt") ? PI32V2::RTI
+                                                                  : PI32V2::RTS);
     EmitToStreamer(*OutStreamer, Inst);
     return;
   default:
