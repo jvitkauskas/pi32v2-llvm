@@ -185,8 +185,10 @@ bool PI32V2FrameLowering::restoreCalleeSavedRegisters(
     for (const CalleeSavedInfo &I : CSI)
       if (I.getReg() != PI32V2::RETS)
         B.addReg(I.getReg(), RegState::ImplicitDefine);
+    // Every register the return uses, the result registers included (they
+    // are its explicit variadic operands), stays used by the pop.
     for (const MachineOperand &MO : MI->operands())
-      if (MO.isReg() && MO.isImplicit() && MO.isUse())
+      if (MO.isReg() && MO.isUse())
         B.addReg(MO.getReg(), RegState::Implicit);
     MBB.erase(MI);
     return true;
