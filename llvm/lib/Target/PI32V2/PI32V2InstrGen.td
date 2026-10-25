@@ -4841,6 +4841,8 @@ def AND_NMODIMM_RRI : PI32V2Inst32<(outs GPR:$r), (ins GPR:$s, Opmodimm_T_F_F:$n
   let Inst{2} = n{2};
   let Inst{1} = n{1};
   let Inst{0} = n{0};
+  let hasSideEffects = 0;
+  let Defs = [PSR];
 }
 def OR_RRR : PI32V2Inst32<(outs GPR:$r), (ins GPR:$s, GPR:$t), "${r} = ${s} \\| ${t}"> {
   bits<4> r;

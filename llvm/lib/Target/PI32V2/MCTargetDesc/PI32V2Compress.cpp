@@ -129,6 +129,52 @@ bool same(const MCOperand &A, const MCOperand &B) {
     return A.getImm() == B.getImm();
   return false;
 }
+
+// The sampled compression table has no negative or >=32 samples and cannot express
+// a semantic alias whose assembly spelling differs (xor -1 versus not).
+bool compressNegAndNot(MCInst &Inst, const MCRegisterInfo &MRI) {
+  const MCRegisterClass &Lo = MRI.getRegClass(PI32V2::GPRLoRegClassID);
+  unsigned Opc = Inst.getOpcode();
+  if (Opc == PI32V2::ADD_S14_RRI && Inst.getNumOperands() == 3 &&
+      Inst.getOperand(0).isReg() && Inst.getOperand(1).isReg() &&
+      Lo.contains(Inst.getOperand(0).getReg()) &&
+      Inst.getOperand(0).getReg() == Inst.getOperand(1).getReg() &&
+      Inst.getOperand(2).isImm()) {
+    int64_t V = Inst.getOperand(2).getImm();
+    if (V >= 32 && V <= 127) {
+      Inst.setOpcode(V < 64 ? PI32V2::ADD_RI_U5_HI : PI32V2::ADD_RI_U6_HI);
+      return true;
+    }
+  }
+  if ((Opc == PI32V2::LI_S16 || Opc == PI32V2::LI_U32) &&
+      Inst.getNumOperands() == 2 && Inst.getOperand(0).isReg() &&
+      Lo.contains(Inst.getOperand(0).getReg()) &&
+      Inst.getOperand(1).isImm()) {
+    int64_t V = Inst.getOperand(1).getImm();
+    if (Opc == PI32V2::LI_U32)
+      V = int32_t(uint32_t(V));
+    if (V >= -32 && V < 0) {
+      Inst.setOpcode(PI32V2::LI_NEG5);
+      Inst.getOperand(1).setImm(V);
+      return true;
+    }
+  }
+  if (Opc == PI32V2::XOR_MODIMM_RRI && Inst.getNumOperands() == 3 &&
+      Inst.getOperand(0).isReg() && Inst.getOperand(1).isReg() &&
+      Lo.contains(Inst.getOperand(0).getReg()) &&
+      Lo.contains(Inst.getOperand(1).getReg()) &&
+      Inst.getOperand(2).isImm() &&
+      uint32_t(Inst.getOperand(2).getImm()) == UINT32_MAX) {
+    MCInst Short;
+    Short.setOpcode(PI32V2::NOT_RR);
+    Short.setLoc(Inst.getLoc());
+    Short.addOperand(Inst.getOperand(0));
+    Short.addOperand(Inst.getOperand(1));
+    Inst = Short;
+    return true;
+  }
+  return false;
+}
 } // namespace
 
 bool PI32V2::compressInst(MCInst &Inst, const MCInstrInfo &MII,
@@ -144,7 +190,8 @@ bool PI32V2::compressInst(MCInst &Inst, const MCInstrInfo &MII,
           LD.operands()[K].OperandType == MCOI::OPERAND_PCREL))
       return false;
   }
-  if (compressList(Inst) || compressExt(Inst, MRI))
+  if (compressList(Inst) || compressExt(Inst, MRI) ||
+      compressNegAndNot(Inst, MRI))
     return true;
   for (const PI32V2CompressRule &R : CompressRules) {
     if (R.Long != Inst.getOpcode())

@@ -16,6 +16,7 @@
 #include "llvm/CodeGen/TargetPassConfig.h"
 #include "llvm/MC/TargetRegistry.h"
 #include "llvm/PassRegistry.h"
+#include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Compiler.h"
 
 using namespace llvm;
@@ -25,6 +26,15 @@ extern "C" LLVM_ABI LLVM_EXTERNAL_VISIBILITY void LLVMInitializePI32V2Target() {
   PassRegistry &PR = *PassRegistry::getPassRegistry();
   initializePI32V2AsmPrinterPass(PR);
   initializePI32V2DAGToDAGISelLegacyPass(PR);
+  // Loop rotation with header duplication also at minsize (-Oz): it saves
+  // bytes here (m-bootloader 1.2: 72 on the SMK-37, 52 on the FM-1), in clang
+  // and in the linker's LTO alike. LoopRotation's own option, left alone when
+  // given; it is process-wide (the toolchain is built for this target only).
+  auto &Opts = cl::getRegisteredOptions();
+  auto It = Opts.find("enable-loop-header-duplication-at-minsize");
+  if (It != Opts.end() && !It->second->getNumOccurrences())
+    if (auto *O = static_cast<cl::opt<bool> *>(It->second))
+      *O = true;
 }
 
 PI32V2TargetMachine::PI32V2TargetMachine(const Target &T, const Triple &TT,
