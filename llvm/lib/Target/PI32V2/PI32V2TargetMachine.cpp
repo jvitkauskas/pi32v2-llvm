@@ -8,6 +8,7 @@
 
 #include "PI32V2TargetMachine.h"
 #include "PI32V2.h"
+#include "PI32V2MachineFunctionInfo.h"
 #include "TargetInfo/PI32V2TargetInfo.h"
 #include "llvm/CodeGen/Passes.h"
 #include "llvm/CodeGen/TargetLoweringObjectFileImpl.h"
@@ -52,6 +53,13 @@ PI32V2TargetMachine::getSubtargetImpl(const Function &F) const {
   if (!I)
     I = std::make_unique<PI32V2Subtarget>(TargetTriple, CPU, FS, *this);
   return I.get();
+}
+
+MachineFunctionInfo *PI32V2TargetMachine::createMachineFunctionInfo(
+    BumpPtrAllocator &Allocator, const Function &F,
+    const TargetSubtargetInfo *STI) const {
+  return PI32V2MachineFunctionInfo::create<PI32V2MachineFunctionInfo>(Allocator,
+                                                                      F, STI);
 }
 
 namespace {

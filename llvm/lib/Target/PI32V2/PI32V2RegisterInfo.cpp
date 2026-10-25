@@ -106,7 +106,10 @@ bool PI32V2RegisterInfo::eliminateFrameIndex(MachineBasicBlock::iterator II,
       return;
     }
     if (Offset < 0 || Offset > 4095)
-      report_fatal_error("PI32V2: stack frame larger than 4 KiB");
+      report_fatal_error(Twine("PI32V2: stack slot ") + Twine(FI) + " at sp+" +
+                         Twine(Offset) + " (object offset " +
+                         Twine(MFI.getObjectOffset(FI)) + ", frame " +
+                         Twine(MFI.getStackSize()) + "): out of reach");
     BuildMI(MBB, II, DL, TII.get(PI32V2::ADD_R_SP_I_L), Dst).addImm(Offset);
   };
 
