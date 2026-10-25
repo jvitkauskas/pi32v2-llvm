@@ -27,6 +27,7 @@ add_llvm_target(PI32V2CodeGen
   PI32V2TargetMachine.cpp
 
   LINK_COMPONENTS
+  Analysis
   AsmPrinter
   CodeGen
   CodeGenTypes

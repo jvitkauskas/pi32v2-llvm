@@ -28,6 +28,7 @@ public:
   ~PI32V2TargetMachine() override;
 
   const PI32V2Subtarget *getSubtargetImpl(const Function &F) const override;
+  TargetTransformInfo getTargetTransformInfo(const Function &F) const override;
   TargetPassConfig *createPassConfig(PassManagerBase &PM) override;
   TargetLoweringObjectFile *getObjFileLowering() const override {
     return TLOF.get();

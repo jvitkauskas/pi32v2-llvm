@@ -36,7 +36,8 @@ public:
   bool selectAddrFI(SDValue Addr, SDValue &Base, SDValue &Off);
   // A register plus an offset that the access's form holds (simm9 times the
   // access size); anything else is a register with offset 0.
-  bool selectAddr(SDValue Addr, SDValue &Base, SDValue &Off, int Scale);
+  bool selectAddr(SDValue Addr, SDValue &Base, SDValue &Off, int Scale,
+                  unsigned Bits = 9);
   bool selectAddrW(SDValue A, SDValue &B, SDValue &O) {
     return selectAddr(A, B, O, 4);
   }
@@ -45,6 +46,17 @@ public:
   }
   bool selectAddrB(SDValue A, SDValue &B, SDValue &O) {
     return selectAddr(A, B, O, 1);
+  }
+  // The memory read-modify-write forms: a register plus a word offset in 6
+  // bits ([r+n] |= ..., n in -128..124).
+  bool selectAddrRMW(SDValue A, SDValue &B, SDValue &O) {
+    // not at sp (outgoing arguments): [sp+n] = r is shorter than sp in a
+    // register and the constant store
+    SDValue Root = CurDAG->isBaseWithConstantOffset(A) ? A.getOperand(0) : A;
+    if (Root.getOpcode() == ISD::CopyFromReg &&
+        cast<RegisterSDNode>(Root.getOperand(1))->getReg() == PI32V2::SP)
+      return false;
+    return selectAddr(A, B, O, 4, 6);
   }
 
 private:
@@ -97,14 +109,14 @@ bool PI32V2DAGToDAGISel::selectAddrFI(SDValue Addr, SDValue &Base,
 }
 
 bool PI32V2DAGToDAGISel::selectAddr(SDValue Addr, SDValue &Base, SDValue &Off,
-                                    int Scale) {
+                                    int Scale, unsigned Bits) {
   if (isFrameAddr(Addr))
     return false;
   SDLoc DL(Addr);
   if (CurDAG->isBaseWithConstantOffset(Addr) &&
       !isa<FrameIndexSDNode>(Addr.getOperand(0))) {
     int64_t C = cast<ConstantSDNode>(Addr.getOperand(1))->getSExtValue();
-    if (C % Scale == 0 && isInt<9>(C / Scale)) {
+    if (C % Scale == 0 && isIntN(Bits, C / Scale)) {
       Base = Addr.getOperand(0);
       Off = CurDAG->getSignedTargetConstant(C, DL, MVT::i32);
       return true;
@@ -167,6 +179,32 @@ void PI32V2DAGToDAGISel::Select(SDNode *N) {
         {ST->getBasePtr(), Step, ST->getValue(), ST->getChain()});
     CurDAG->setNodeMemRefs(M, {ST->getMemOperand()});
     ReplaceNode(N, M);
+    return;
+  }
+  if (N->getOpcode() == PI32V2ISD::UDIV64 ||
+      N->getOpcode() == PI32V2ISD::SDIV64) {
+    // the dividend as a register pair, the quotient a pair
+    SDLoc DL(N);
+    SDValue Ops[] = {
+        CurDAG->getTargetConstant(PI32V2::GPRPairRegClassID, DL, MVT::i32),
+        N->getOperand(0),
+        CurDAG->getTargetConstant(PI32V2::sub_lo, DL, MVT::i32),
+        N->getOperand(1),
+        CurDAG->getTargetConstant(PI32V2::sub_hi, DL, MVT::i32)};
+    SDValue X(CurDAG->getMachineNode(TargetOpcode::REG_SEQUENCE, DL, MVT::i64,
+                                     Ops),
+              0);
+    unsigned Opc = N->getOpcode() == PI32V2ISD::UDIV64 ? PI32V2::DIV_U_PPR
+                                                       : PI32V2::DIV_S_PPR;
+    SDValue Q(CurDAG->getMachineNode(Opc, DL, MVT::i64, X, N->getOperand(2)),
+              0);
+    if (!SDValue(N, 0).use_empty())
+      ReplaceUses(SDValue(N, 0), CurDAG->getTargetExtractSubreg(
+                                     PI32V2::sub_lo, DL, MVT::i32, Q));
+    if (!SDValue(N, 1).use_empty())
+      ReplaceUses(SDValue(N, 1), CurDAG->getTargetExtractSubreg(
+                                     PI32V2::sub_hi, DL, MVT::i32, Q));
+    CurDAG->RemoveDeadNode(N);
     return;
   }
   if (N->getOpcode() == ISD::UMUL_LOHI || N->getOpcode() == ISD::SMUL_LOHI) {

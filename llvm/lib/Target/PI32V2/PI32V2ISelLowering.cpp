@@ -19,6 +19,7 @@
 #include "PI32V2InstrInfo.h"
 #include "PI32V2MachineFunctionInfo.h"
 #include "PI32V2Subtarget.h"
+#include "llvm/Support/KnownBits.h"
 #include "llvm/CodeGen/CallingConvLower.h"
 #include "llvm/CodeGen/MachineFrameInfo.h"
 #include "llvm/CodeGen/MachineFunction.h"
@@ -92,6 +93,10 @@ PI32V2TargetLowering::PI32V2TargetLowering(const TargetMachine &TM,
     setIndexedLoadAction(ISD::POST_INC, MVT::f32, Legal);
     setIndexedStoreAction(ISD::POST_INC, MVT::f32, Legal);
   }
+  // A 64-bit division by a divisor that fits in 32 bits is div.u.ppr or
+  // div.s.ppr (ReplaceNodeResults); others are library calls.
+  for (unsigned Op : {ISD::UDIV, ISD::SDIV, ISD::UREM, ISD::SREM})
+    setOperationAction(Op, MVT::i64, Custom);
   setOperationAction(ISD::VASTART, MVT::Other, Custom);
   setOperationAction(ISD::RETURNADDR, MVT::i32, Custom);
   setOperationAction(ISD::FRAMEADDR, MVT::i32, Custom);
@@ -187,9 +192,19 @@ SDValue PI32V2TargetLowering::lowerAddress(SDValue Op,
   SDLoc DL(Op);
   EVT VT = Op.getValueType();
   SDValue T;
-  if (auto *G = dyn_cast<GlobalAddressSDNode>(Op))
-    T = DAG.getTargetGlobalAddress(G->getGlobal(), DL, VT, G->getOffset());
-  else if (auto *E = dyn_cast<ExternalSymbolSDNode>(Op))
+  if (auto *G = dyn_cast<GlobalAddressSDNode>(Op)) {
+    // The symbol alone, an offset added: accesses to one global share its
+    // address and reach the fields by offset ([r+n]), as JieLi's compiler
+    // does.
+    SDValue Base = DAG.getNode(
+        PI32V2ISD::WRAPPER, DL, VT,
+        DAG.getTargetGlobalAddress(G->getGlobal(), DL, VT, 0));
+    if (int64_t Off = G->getOffset())
+      return DAG.getNode(ISD::ADD, DL, VT, Base,
+                         DAG.getSignedConstant(Off, DL, VT));
+    return Base;
+  }
+  if (auto *E = dyn_cast<ExternalSymbolSDNode>(Op))
     T = DAG.getTargetExternalSymbol(E->getSymbol(), VT);
   else if (auto *B = dyn_cast<BlockAddressSDNode>(Op))
     T = DAG.getTargetBlockAddress(B->getBlockAddress(), VT, B->getOffset());
@@ -273,6 +288,37 @@ SDValue PI32V2TargetLowering::LowerFormalArguments(
     }
   }
   return Chain;
+}
+
+void PI32V2TargetLowering::ReplaceNodeResults(SDNode *N,
+                                              SmallVectorImpl<SDValue> &Results,
+                                              SelectionDAG &DAG) const {
+  unsigned Opc = N->getOpcode();
+  bool Signed = Opc == ISD::SDIV || Opc == ISD::SREM;
+  if (N->getValueType(0) != MVT::i64 ||
+      (Opc != ISD::UDIV && Opc != ISD::SDIV && Opc != ISD::UREM &&
+       Opc != ISD::SREM))
+    return; // the default: a library call
+  SDValue X = N->getOperand(0), D = N->getOperand(1);
+  // the divisor must be a 32-bit value, zero- or sign-extended
+  if (Signed ? DAG.ComputeNumSignBits(D) < 33
+             : DAG.computeKnownBits(D).countMinLeadingZeros() < 32)
+    return;
+  SDLoc DL(N);
+  auto [XLo, XHi] = DAG.SplitScalar(X, DL, MVT::i32, MVT::i32);
+  SDValue D32 = DAG.getNode(ISD::TRUNCATE, DL, MVT::i32, D);
+  SDValue Q = DAG.getNode(Signed ? PI32V2ISD::SDIV64 : PI32V2ISD::UDIV64, DL,
+                          DAG.getVTList(MVT::i32, MVT::i32), XLo, XHi, D32);
+  SDValue Q64 = DAG.getNode(ISD::BUILD_PAIR, DL, MVT::i64, Q.getValue(0),
+                            Q.getValue(1));
+  if (Opc == ISD::UDIV || Opc == ISD::SDIV) {
+    Results.push_back(Q64);
+    return;
+  }
+  // x - q * d (C's remainder: q truncates toward zero)
+  Results.push_back(
+      DAG.getNode(ISD::SUB, DL, MVT::i64, X,
+                  DAG.getNode(ISD::MUL, DL, MVT::i64, Q64, D)));
 }
 
 bool PI32V2TargetLowering::getPostIndexedAddressParts(
