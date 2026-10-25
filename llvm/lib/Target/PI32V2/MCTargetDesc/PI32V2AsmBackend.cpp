@@ -72,6 +72,11 @@ public:
     if (!Asm->getSymbolOffset(*A, Sym))
       return {};
     Value = Sym + C - (Asm->getFragmentOffset(F) + Fixup.getOffset());
+    // During relaxation F's offset is already updated but a forward target's
+    // is not: add the stretch, as MCAssembler does, or every instruction that
+    // grew before F makes a short forward branch look out of reach.
+    if (A->getFragment()->getLayoutOrder() > F.getLayoutOrder())
+      Value += Asm->getStretch();
     return true;
   }
 
