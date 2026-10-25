@@ -1,0 +1,22 @@
+#ifndef ELF_RELOC
+#error "ELF_RELOC must be defined"
+#endif
+
+// JieLi's numbers and names (pi32v2-isa docs/ELF.md, section 5).
+ELF_RELOC(R_PI32V2_NONE,                 0)
+ELF_RELOC(R_PI32V2_LONG_JUMP_17M2,       1)
+ELF_RELOC(R_PI32V2_LONG_JUMP_23M2,       2)
+ELF_RELOC(R_PI32V2_EXTEND_JUMP_17M2,     3)
+ELF_RELOC(R_PI32V2_EXTEND_CALL_32M2,     4)
+ELF_RELOC(R_PI32V2_MOV_ABS32,            5)
+ELF_RELOC(R_PI32V2_ABS8,                 6)
+ELF_RELOC(R_PI32V2_ABS16,                7)
+ELF_RELOC(R_PI32V2_ABS32,                8)
+ELF_RELOC(R_PI32V2_GOT,                  9)
+ELF_RELOC(R_PI32V2_GOTFUNCDESC,         10)
+ELF_RELOC(R_PI32V2_FUNCDESC,            11)
+ELF_RELOC(R_PI32V2_FUNCDESCVALUE,       12)
+ELF_RELOC(R_PI32V2_REL32,               13)
+ELF_RELOC(R_PI32V2_MOV_ABS16,           14)
+ELF_RELOC(R_PI32V2_GOT16,               15)
+ELF_RELOC(R_PI32V2_GOTFUNCDESC16,       16)

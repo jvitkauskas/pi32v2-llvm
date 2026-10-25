@@ -94,6 +94,7 @@ uint16_t ELF::convertArchNameToEMachine(StringRef Arch) {
       .Case("openrisc", EM_OPENRISC)
       .Case("arc_compact", EM_ARC_COMPACT)
       .Case("xtensa", EM_XTENSA)
+      .Case("pi32v2", EM_PI32V2)
       .Case("videocore", EM_VIDEOCORE)
       .Case("tmm_gpp", EM_TMM_GPP)
       .Case("ns32k", EM_NS32K)
@@ -262,6 +263,8 @@ uint16_t ELF::convertTripleArchTypeToEMachine(Triple::ArchType ArchType) {
     return EM_XCORE;
   case Triple::xtensa:
     return EM_XTENSA;
+  case Triple::pi32v2:
+    return EM_PI32V2;
   }
 }
 
@@ -424,6 +427,8 @@ StringRef ELF::convertEMachineToArchName(uint16_t EMachine) {
     return "arc_compact";
   case EM_XTENSA:
     return "xtensa";
+  case EM_PI32V2:
+    return "pi32v2";
   case EM_VIDEOCORE:
     return "videocore";
   case EM_TMM_GPP:

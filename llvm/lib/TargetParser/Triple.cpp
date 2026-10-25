@@ -164,6 +164,8 @@ StringRef Triple::getArchTypeName(ArchType Kind) {
     return "xcore";
   case xtensa:
     return "xtensa";
+  case pi32v2:
+    return "pi32v2";
   }
 
   llvm_unreachable("Invalid ArchType!");
@@ -417,6 +419,8 @@ StringRef Triple::getArchTypePrefix(ArchType Kind) {
 
   case xtensa:
     return "xtensa";
+  case pi32v2:
+    return "pi32v2";
   }
 }
 
@@ -569,6 +573,7 @@ Triple::ArchType Triple::getArchTypeForLLVMName(StringRef Name) {
       .Case("loongarch64", loongarch64)
       .Case("dxil", dxil)
       .Case("xtensa", xtensa)
+      .Case("pi32v2", pi32v2)
       .Default(UnknownArch);
 }
 
@@ -724,6 +729,7 @@ Triple::ArchType Triple::parseArch(StringRef ArchName) {
                   "dxilv1.9"},
                  Triple::dxil)
           .Case("xtensa", Triple::xtensa)
+          .Case("pi32v2", Triple::pi32v2)
           .Default(Triple::UnknownArch);
 
   // Some architectures require special parsing logic just to compute the
@@ -1050,6 +1056,7 @@ static Triple::ObjectFormatType getDefaultFormat(const Triple &T) {
   case Triple::thumbeb:
   case Triple::ve:
   case Triple::xcore:
+  case Triple::pi32v2:
   case Triple::xtensa:
     return Triple::ELF;
 
@@ -1816,6 +1823,7 @@ unsigned Triple::getArchPointerBitWidth(llvm::Triple::ArchType Arch) {
   case llvm::Triple::wasm32:
   case llvm::Triple::x86:
   case llvm::Triple::xcore:
+  case llvm::Triple::pi32v2:
   case llvm::Triple::xtensa:
     return 32;
 
@@ -1927,6 +1935,7 @@ Triple Triple::get32BitArchVariant() const {
   case Triple::wasm32:
   case Triple::x86:
   case Triple::xcore:
+  case Triple::pi32v2:
   case Triple::xtensa:
     // Already 32-bit.
     break;
@@ -2011,6 +2020,7 @@ Triple Triple::get64BitArchVariant() const {
   case Triple::sparcel:
   case Triple::tce:
   case Triple::xcore:
+  case Triple::pi32v2:
   case Triple::xtensa:
     T.setArch(UnknownArch);
     break;
@@ -2151,6 +2161,7 @@ Triple Triple::getBigEndianArchVariant() const {
   case Triple::xcore:
   case Triple::ve:
   case Triple::csky:
+  case Triple::pi32v2:
   case Triple::xtensa:
 
   // ARM is intentionally unsupported here, changing the architecture would
@@ -2297,6 +2308,7 @@ bool Triple::isLittleEndian() const {
   case Triple::x86:
   case Triple::x86_64:
   case Triple::xcore:
+  case Triple::pi32v2:
   case Triple::xtensa:
     return true;
   default:
@@ -2547,6 +2559,7 @@ ExceptionHandling Triple::getDefaultExceptionHandling() const {
   case Triple::msp430:
   case Triple::systemz:
   case Triple::xcore:
+  case Triple::pi32v2:
   case Triple::xtensa:
     return ExceptionHandling::DwarfCFI;
   default:

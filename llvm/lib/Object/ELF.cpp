@@ -183,6 +183,13 @@ StringRef llvm::object::getELFRelocationTypeName(uint32_t Machine,
       break;
     }
     break;
+  case ELF::EM_PI32V2:
+    switch (Type) {
+#include "llvm/BinaryFormat/ELFRelocs/PI32V2.def"
+    default:
+      break;
+    }
+    break;
   default:
     break;
   }

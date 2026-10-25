@@ -1245,6 +1245,7 @@ constexpr EnumStringDef<unsigned, 2> ElfMachineTypeDefs[] = {
   ENUM_ENT(EM_OPENRISC,      "OpenRISC 32-bit embedded processor"),
   ENUM_ENT(EM_ARC_COMPACT,   "EM_ARC_COMPACT"),
   ENUM_ENT(EM_XTENSA,        "Tensilica Xtensa Processor"),
+  ENUM_ENT(EM_PI32V2,        "JieLi pi32v2"),
   ENUM_ENT(EM_VIDEOCORE,     "Alphamosaic VideoCore processor"),
   ENUM_ENT(EM_TMM_GPP,       "Thompson Multimedia General Purpose Processor"),
   ENUM_ENT(EM_NS32K,         "National Semiconductor 32000 series"),
