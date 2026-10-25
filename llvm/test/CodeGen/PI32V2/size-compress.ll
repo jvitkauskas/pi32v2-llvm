@@ -46,3 +46,21 @@ define i32 @mask(i32 %a) minsize {
   %r = and i32 %a, -256
   ret i32 %r
 }
+
+; and with a mask that clears one bit: the 16-bit form, also for the
+; sign-extended values code generation has (-4097 is ~0x1000)
+; CHECK-LABEL: <clearbit12>:
+; CHECK: b8 2c{{.*}}r0 &= 4294963199
+; CHECK-NEXT: {{.*}}80 00{{.*}}rts
+define i32 @clearbit12(i32 %a) minsize {
+  %r = and i32 %a, -4097
+  ret i32 %r
+}
+
+; CHECK-LABEL: <clearbit0>:
+; CHECK: b8 20{{.*}}r0 &= 4294967294
+; CHECK-NEXT: {{.*}}80 00{{.*}}rts
+define i32 @clearbit0(i32 %a) minsize {
+  %r = and i32 %a, -2
+  ret i32 %r
+}

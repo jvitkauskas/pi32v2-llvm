@@ -153,7 +153,7 @@ static bool immFits(unsigned Opc, unsigned OpNo, int64_t V) {
     return true;
   case PI32V2::AND_INVBIT:
     if (OpNo == 2)
-      return (uint64_t(V) >> 32) == 0 && llvm::isPowerOf2_32(~uint32_t(V));
+      return (llvm::isUInt<32>(V) || llvm::isInt<32>(V)) && llvm::isPowerOf2_32(~uint32_t(V));
     return true;
   case PI32V2::ASR_RRI:
     if (OpNo == 2)
@@ -161,7 +161,7 @@ static bool immFits(unsigned Opc, unsigned OpNo, int64_t V) {
     return true;
   case PI32V2::BEQ_AND_RI:
     if (OpNo == 1)
-      return (uint64_t(V) >> 32) == 0 && llvm::isPowerOf2_32(uint32_t(V));
+      return (llvm::isUInt<32>(V) || llvm::isInt<32>(V)) && llvm::isPowerOf2_32(uint32_t(V));
     return true;
   case PI32V2::BEQ_RI:
     if (OpNo == 1)
@@ -201,7 +201,7 @@ static bool immFits(unsigned Opc, unsigned OpNo, int64_t V) {
     return true;
   case PI32V2::BNE_AND_RI:
     if (OpNo == 1)
-      return (uint64_t(V) >> 32) == 0 && llvm::isPowerOf2_32(uint32_t(V));
+      return (llvm::isUInt<32>(V) || llvm::isInt<32>(V)) && llvm::isPowerOf2_32(uint32_t(V));
     return true;
   case PI32V2::BNE_RI:
     if (OpNo == 1)
@@ -253,7 +253,7 @@ static bool immFits(unsigned Opc, unsigned OpNo, int64_t V) {
     return true;
   case PI32V2::OR_BIT:
     if (OpNo == 2)
-      return (uint64_t(V) >> 32) == 0 && llvm::isPowerOf2_32(uint32_t(V));
+      return (llvm::isUInt<32>(V) || llvm::isInt<32>(V)) && llvm::isPowerOf2_32(uint32_t(V));
     return true;
   case PI32V2::ST_B:
     if (OpNo == 1)
@@ -285,7 +285,7 @@ static bool immFits(unsigned Opc, unsigned OpNo, int64_t V) {
     return true;
   case PI32V2::XOR_BIT:
     if (OpNo == 2)
-      return (uint64_t(V) >> 32) == 0 && llvm::isPowerOf2_32(uint32_t(V));
+      return (llvm::isUInt<32>(V) || llvm::isInt<32>(V)) && llvm::isPowerOf2_32(uint32_t(V));
     return true;
   default:
     return true;
