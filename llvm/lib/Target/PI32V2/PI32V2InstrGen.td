@@ -6994,6 +6994,8 @@ def CLS_RR : PI32V2Inst32<(outs GPR:$r), (ins GPR:$s), "${r} = cls(${s})"> {
   let Inst{2} = 0;
   let Inst{1} = 0;
   let Inst{0} = 1;
+  let hasSideEffects = 0;
+  let Defs = [PSR];
 }
 def SGN_RR : PI32V2Inst32<(outs GPR:$r), (ins GPR:$s), "${r} = zcmp(${s})"> {
   bits<4> r;
@@ -22708,6 +22710,8 @@ def UMAX_RRR : PI32V2Inst32<(outs GPR:$r), (ins GPR:$s, GPR:$t), "${r} = umax(${
   let Inst{5} = s{1};
   let Inst{4} = s{0};
   let Inst{0} = 0;
+  let hasSideEffects = 0;
+  let Defs = [PSR];
 }
 def SMAX_RRR : PI32V2Inst32<(outs GPR:$r), (ins GPR:$s, GPR:$t), "${r} = smax(${s}, ${t})"> {
   bits<4> r;
@@ -22741,6 +22745,8 @@ def SMAX_RRR : PI32V2Inst32<(outs GPR:$r), (ins GPR:$s, GPR:$t), "${r} = smax(${
   let Inst{5} = s{1};
   let Inst{4} = s{0};
   let Inst{0} = 1;
+  let hasSideEffects = 0;
+  let Defs = [PSR];
 }
 def UMIN_RRR : PI32V2Inst32<(outs GPR:$r), (ins GPR:$s, GPR:$t), "${r} = umin(${s}, ${t})"> {
   bits<4> r;
@@ -22774,6 +22780,8 @@ def UMIN_RRR : PI32V2Inst32<(outs GPR:$r), (ins GPR:$s, GPR:$t), "${r} = umin(${
   let Inst{5} = s{1};
   let Inst{4} = s{0};
   let Inst{0} = 0;
+  let hasSideEffects = 0;
+  let Defs = [PSR];
 }
 def SMIN_RRR : PI32V2Inst32<(outs GPR:$r), (ins GPR:$s, GPR:$t), "${r} = smin(${s}, ${t})"> {
   bits<4> r;
@@ -22807,6 +22815,8 @@ def SMIN_RRR : PI32V2Inst32<(outs GPR:$r), (ins GPR:$s, GPR:$t), "${r} = smin(${
   let Inst{5} = s{1};
   let Inst{4} = s{0};
   let Inst{0} = 1;
+  let hasSideEffects = 0;
+  let Defs = [PSR];
 }
 def ADD_RRRE_E0 : PI32V2Inst32<(outs GPR:$r), (ins GPR:$s, GPR:$t), "${r} = ${s} + ${t} (usat)"> {
   bits<4> r;

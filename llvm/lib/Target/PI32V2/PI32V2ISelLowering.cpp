@@ -81,7 +81,8 @@ PI32V2TargetLowering::PI32V2TargetLowering(const TargetMachine &TM,
   // 64-bit add and subtract through the carry flag (add then addc, sub then
   // subc); 32 x 32 -> 64 multiplies into a register pair (ISelDAGToDAG).
   for (unsigned Op : {ISD::ADDC, ISD::ADDE, ISD::SUBC, ISD::SUBE,
-                      ISD::UMUL_LOHI, ISD::SMUL_LOHI})
+                      ISD::UMUL_LOHI, ISD::SMUL_LOHI, ISD::SMIN, ISD::SMAX,
+                      ISD::UMIN, ISD::UMAX})
     setOperationAction(Op, MVT::i32, Legal);
   setOperationAction(ISD::VASTART, MVT::Other, Custom);
   setOperationAction(ISD::RETURNADDR, MVT::i32, Custom);

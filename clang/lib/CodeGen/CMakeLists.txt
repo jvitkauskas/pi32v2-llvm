@@ -124,6 +124,7 @@ add_clang_library(clangCodeGen
   SwiftCallingConv.cpp
   TargetBuiltins/ARM.cpp
   TargetBuiltins/AVR.cpp
+  TargetBuiltins/PI32V2.cpp
   TargetBuiltins/AMDGPU.cpp
   TargetBuiltins/DirectX.cpp
   TargetBuiltins/Hexagon.cpp
