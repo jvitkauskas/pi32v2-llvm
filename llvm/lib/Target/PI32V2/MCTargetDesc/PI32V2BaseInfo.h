@@ -42,6 +42,16 @@ std::string srmaskText(int64_t Raw, unsigned Width);
 const char *srName(unsigned N);
 
 } // namespace PI32V2
+class MCInst;
+class MCInstrInfo;
+class MCRegisterInfo;
+namespace PI32V2 {
+/// Put Inst in the shortest form JieLi's assembler would use for its line;
+/// false if it keeps its form.
+bool compressInst(MCInst &Inst, const MCInstrInfo &MII,
+                  const MCRegisterInfo &MRI);
+
+} // namespace PI32V2
 } // namespace llvm
 
 #endif

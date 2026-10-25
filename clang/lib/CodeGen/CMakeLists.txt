@@ -145,6 +145,7 @@ add_clang_library(clangCodeGen
   Targets/DirectX.cpp
   Targets/Hexagon.cpp
   Targets/Lanai.cpp
+  Targets/PI32V2.cpp
   Targets/LoongArch.cpp
   Targets/M68k.cpp
   Targets/MSP430.cpp

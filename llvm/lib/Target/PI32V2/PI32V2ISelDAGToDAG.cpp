@@ -82,7 +82,7 @@ bool PI32V2DAGToDAGISel::selectAddrFI(SDValue Addr, SDValue &Base,
     return false;
   auto *FI = cast<FrameIndexSDNode>(Addr.getOperand(0));
   Base = CurDAG->getTargetFrameIndex(FI->getIndex(), MVT::i32);
-  Off = CurDAG->getTargetConstant(
+  Off = CurDAG->getSignedTargetConstant(
       cast<ConstantSDNode>(Addr.getOperand(1))->getSExtValue(), DL, MVT::i32);
   return true;
 }
@@ -97,7 +97,7 @@ bool PI32V2DAGToDAGISel::selectAddr(SDValue Addr, SDValue &Base, SDValue &Off,
     int64_t C = cast<ConstantSDNode>(Addr.getOperand(1))->getSExtValue();
     if (C % Scale == 0 && isInt<9>(C / Scale)) {
       Base = Addr.getOperand(0);
-      Off = CurDAG->getTargetConstant(C, DL, MVT::i32);
+      Off = CurDAG->getSignedTargetConstant(C, DL, MVT::i32);
       return true;
     }
   }
