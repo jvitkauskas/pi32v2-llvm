@@ -49,6 +49,55 @@ bool fitsNum(int64_t V, bool Signed, unsigned Width, int Scale, int Add,
 #define PI32V2_GEN_COMPRESS
 #include "PI32V2CompressGen.inc"
 
+// A register mask as a 16-bit form's range (rlist4): r3 down to r<k>, or r<k>
+// down to r4; -1 if it is neither.
+int rangeOf(uint64_t Mask) {
+  for (unsigned K = 0; K < 4; ++K)
+    if (Mask == (0xFu & ~((1u << K) - 1)))
+      return K;
+  for (unsigned K = 4; K < 16; ++K)
+    if (Mask == (((2u << K) - 1) & ~0xFu))
+      return K;
+  return -1;
+}
+
+// A push or pop of a mask that is one range has a 16-bit form (the generated
+// rules map operands one to one, a mask to a range is not one of them).
+bool compressList(MCInst &Inst) {
+  struct ListForm {
+    unsigned Mask, Range, Alone; // Alone: only rets or pc, no general register
+  };
+  static const ListForm Forms[] = {
+      {PI32V2::PUSH_RMASK, PI32V2::PUSH_RL, 0},
+      {PI32V2::POP_RMASK, PI32V2::POP_RL, 0},
+      {PI32V2::PUSH_RETS_RMASK, PI32V2::PUSH_RETS_RL, PI32V2::PUSH_RETS},
+      {PI32V2::POP_PC_RMASK, PI32V2::POP_PC_RL, PI32V2::POP_PC},
+      {PI32V2::POP_RETS_RMASK, PI32V2::POP_RETS_RL, 0},
+  };
+  for (const ListForm &F : Forms) {
+    if (F.Mask != Inst.getOpcode() || Inst.getNumOperands() != 1 ||
+        !Inst.getOperand(0).isImm())
+      continue;
+    uint64_t Mask = Inst.getOperand(0).getImm();
+    unsigned Opc;
+    int K = rangeOf(Mask);
+    if (Mask == 0 && F.Alone)
+      Opc = F.Alone;
+    else if (K >= 0)
+      Opc = F.Range;
+    else
+      return false;
+    MCInst S;
+    S.setOpcode(Opc);
+    S.setLoc(Inst.getLoc());
+    if (Opc == F.Range)
+      S.addOperand(MCOperand::createImm(K));
+    Inst = S;
+    return true;
+  }
+  return false;
+}
+
 bool same(const MCOperand &A, const MCOperand &B) {
   if (A.isReg() && B.isReg())
     return A.getReg() == B.getReg();
@@ -63,6 +112,8 @@ bool PI32V2::compressInst(MCInst &Inst, const MCInstrInfo &MII,
   for (const MCOperand &MO : Inst)
     if (!MO.isReg() && !MO.isImm())
       return false; // an expression keeps its form (and its relocation)
+  if (compressList(Inst))
+    return true;
   for (const PI32V2CompressRule &R : CompressRules) {
     if (R.Long != Inst.getOpcode())
       continue;

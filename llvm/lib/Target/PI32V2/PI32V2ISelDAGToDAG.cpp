@@ -9,6 +9,7 @@
 #include "MCTargetDesc/PI32V2BaseInfo.h"
 #include "MCTargetDesc/PI32V2MCTargetDesc.h"
 #include "PI32V2.h"
+#include "PI32V2Subtarget.h"
 #include "PI32V2TargetMachine.h"
 #include "llvm/CodeGen/SelectionDAGISel.h"
 #include "llvm/Support/MathExtras.h"
@@ -23,6 +24,11 @@ class PI32V2DAGToDAGISel : public SelectionDAGISel {
 public:
   PI32V2DAGToDAGISel(PI32V2TargetMachine &TM, CodeGenOptLevel OptLevel)
       : SelectionDAGISel(TM, OptLevel) {}
+
+  bool runOnMachineFunction(MachineFunction &MF) override {
+    Subtarget = &MF.getSubtarget<PI32V2Subtarget>();
+    return SelectionDAGISel::runOnMachineFunction(MF);
+  }
 
   void Select(SDNode *N) override;
 
@@ -40,6 +46,9 @@ public:
   bool selectAddrB(SDValue A, SDValue &B, SDValue &O) {
     return selectAddr(A, B, O, 1);
   }
+
+private:
+  const PI32V2Subtarget *Subtarget = nullptr;
 
 #include "PI32V2GenDAGISel.inc"
 };
@@ -119,6 +128,23 @@ void PI32V2DAGToDAGISel::Select(SDNode *N) {
     ReplaceNode(N, CurDAG->getMachineNode(
                        PI32V2::ADDR_FI, DL, MVT::i32, TFI,
                        CurDAG->getTargetConstant(0, DL, MVT::i32)));
+    return;
+  }
+  if (N->getOpcode() == ISD::UMUL_LOHI || N->getOpcode() == ISD::SMUL_LOHI) {
+    // r(2n+1)_r(2n) = a * b: the low word in the even register.
+    SDLoc DL(N);
+    unsigned Opc = N->getOpcode() == ISD::UMUL_LOHI ? PI32V2::MUL_U_PRR
+                                                    : PI32V2::MUL_S_PRR;
+    SDValue Pair(CurDAG->getMachineNode(Opc, DL, MVT::i64, N->getOperand(0),
+                                        N->getOperand(1)),
+                 0);
+    if (!SDValue(N, 0).use_empty())
+      ReplaceUses(SDValue(N, 0), CurDAG->getTargetExtractSubreg(
+                                     PI32V2::sub_lo, DL, MVT::i32, Pair));
+    if (!SDValue(N, 1).use_empty())
+      ReplaceUses(SDValue(N, 1), CurDAG->getTargetExtractSubreg(
+                                     PI32V2::sub_hi, DL, MVT::i32, Pair));
+    CurDAG->RemoveDeadNode(N);
     return;
   }
   SelectCode(N);

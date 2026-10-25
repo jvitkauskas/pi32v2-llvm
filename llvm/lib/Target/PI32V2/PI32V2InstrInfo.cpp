@@ -34,6 +34,10 @@ void PI32V2InstrInfo::copyPhysReg(MachineBasicBlock &MBB,
   if (DG && SG)
     BuildMI(MBB, I, DL, get(PI32V2::MOV_RR), Dst)
         .addReg(Src, getKillRegState(KillSrc));
+  else if (PI32V2::GPRPairRegClass.contains(Dst) &&
+           PI32V2::GPRPairRegClass.contains(Src))
+    BuildMI(MBB, I, DL, get(PI32V2::MOV_PAIR), Dst)
+        .addReg(Src, getKillRegState(KillSrc));
   else if (DG && PI32V2::SRRegClass.contains(Src))
     BuildMI(MBB, I, DL, get(PI32V2::MOV_R_SR), Dst)
         .addReg(Src, getKillRegState(KillSrc));
@@ -58,6 +62,19 @@ void PI32V2InstrInfo::storeRegToStackSlot(
     bool IsKill, int FI, const TargetRegisterClass *RC, Register VReg,
     MachineInstr::MIFlag Flags) const {
   DebugLoc DL = I != MBB.end() ? I->getDebugLoc() : DebugLoc();
+  if (PI32V2::GPRPairRegClass.hasSubClassEq(RC) ||
+      (Src.isPhysical() && PI32V2::GPRPairRegClass.contains(Src))) {
+    // A pair: its two words, the low one first.
+    for (unsigned K = 0; K < 2; ++K)
+      BuildMI(MBB, I, DL, get(PI32V2::STW_FI))
+          .addReg(RI.getSubReg(Src, K ? PI32V2::sub_hi : PI32V2::sub_lo),
+                  getKillRegState(IsKill))
+          .addFrameIndex(FI)
+          .addImm(4 * K)
+          .addMemOperand(frameMMO(MBB, FI, MachineMemOperand::MOStore))
+          .setMIFlag(Flags);
+    return;
+  }
   BuildMI(MBB, I, DL, get(PI32V2::STW_FI))
       .addReg(Src, getKillRegState(IsKill))
       .addFrameIndex(FI)
@@ -71,6 +88,17 @@ void PI32V2InstrInfo::loadRegFromStackSlot(
     int FI, const TargetRegisterClass *RC, Register VReg, unsigned SubReg,
     MachineInstr::MIFlag Flags) const {
   DebugLoc DL = I != MBB.end() ? I->getDebugLoc() : DebugLoc();
+  if (PI32V2::GPRPairRegClass.hasSubClassEq(RC) ||
+      (Dst.isPhysical() && PI32V2::GPRPairRegClass.contains(Dst))) {
+    for (unsigned K = 0; K < 2; ++K)
+      BuildMI(MBB, I, DL, get(PI32V2::LDW_FI),
+              RI.getSubReg(Dst, K ? PI32V2::sub_hi : PI32V2::sub_lo))
+          .addFrameIndex(FI)
+          .addImm(4 * K)
+          .addMemOperand(frameMMO(MBB, FI, MachineMemOperand::MOLoad))
+          .setMIFlag(Flags);
+    return;
+  }
   BuildMI(MBB, I, DL, get(PI32V2::LDW_FI), Dst)
       .addFrameIndex(FI)
       .addImm(0)
@@ -90,6 +118,46 @@ unsigned PI32V2InstrInfo::inverseBranch(unsigned Opc) {
   case PI32V2::BLTS_RR: return PI32V2::BGES_RR;
   case PI32V2::BGTS_RR: return PI32V2::BLES_RR;
   case PI32V2::BLES_RR: return PI32V2::BGTS_RR;
+  case PI32V2::BEQ_RI: return PI32V2::BNE_RI;
+  case PI32V2::BNE_RI: return PI32V2::BEQ_RI;
+  case PI32V2::BGE_RI: return PI32V2::BLT_RI;
+  case PI32V2::BLT_RI: return PI32V2::BGE_RI;
+  case PI32V2::BGT_RI: return PI32V2::BLE_RI;
+  case PI32V2::BLE_RI: return PI32V2::BGT_RI;
+  case PI32V2::BGES_RI: return PI32V2::BLTS_RI;
+  case PI32V2::BLTS_RI: return PI32V2::BGES_RI;
+  case PI32V2::BGTS_RI: return PI32V2::BLES_RI;
+  case PI32V2::BLES_RI: return PI32V2::BGTS_RI;
+  case PI32V2::BEQ_RI_L: return PI32V2::BNE_RI_L;
+  case PI32V2::BNE_RI_L: return PI32V2::BEQ_RI_L;
+  case PI32V2::BGE_RI_L: return PI32V2::BLT_RI_L;
+  case PI32V2::BLT_RI_L: return PI32V2::BGE_RI_L;
+  case PI32V2::BGT_RI_L: return PI32V2::BLE_RI_L;
+  case PI32V2::BLE_RI_L: return PI32V2::BGT_RI_L;
+  case PI32V2::BGES_RI_L: return PI32V2::BLTS_RI_L;
+  case PI32V2::BLTS_RI_L: return PI32V2::BGES_RI_L;
+  case PI32V2::BGTS_RI_L: return PI32V2::BLES_RI_L;
+  case PI32V2::BLES_RI_L: return PI32V2::BGTS_RI_L;
+  case PI32V2::BFEQ_RR: return PI32V2::BFUNE_RR;
+  case PI32V2::BFUNE_RR: return PI32V2::BFEQ_RR;
+  case PI32V2::BFLT_RR: return PI32V2::BFUGE_RR;
+  case PI32V2::BFUGE_RR: return PI32V2::BFLT_RR;
+  case PI32V2::BFLE_RR: return PI32V2::BFUGT_RR;
+  case PI32V2::BFUGT_RR: return PI32V2::BFLE_RR;
+  case PI32V2::BFGT_RR: return PI32V2::BFULE_RR;
+  case PI32V2::BFULE_RR: return PI32V2::BFGT_RR;
+  case PI32V2::BFGE_RR: return PI32V2::BFULT_RR;
+  case PI32V2::BFULT_RR: return PI32V2::BFGE_RR;
+  case PI32V2::BFEQ_RR_L: return PI32V2::BFUNE_RR_L;
+  case PI32V2::BFUNE_RR_L: return PI32V2::BFEQ_RR_L;
+  case PI32V2::BFLT_RR_L: return PI32V2::BFUGE_RR_L;
+  case PI32V2::BFUGE_RR_L: return PI32V2::BFLT_RR_L;
+  case PI32V2::BFLE_RR_L: return PI32V2::BFUGT_RR_L;
+  case PI32V2::BFUGT_RR_L: return PI32V2::BFLE_RR_L;
+  case PI32V2::BFGT_RR_L: return PI32V2::BFULE_RR_L;
+  case PI32V2::BFULE_RR_L: return PI32V2::BFGT_RR_L;
+  case PI32V2::BFGE_RR_L: return PI32V2::BFULT_RR_L;
+  case PI32V2::BFULT_RR_L: return PI32V2::BFGE_RR_L;
   default: return 0;
   }
 }
@@ -191,7 +259,7 @@ unsigned PI32V2InstrInfo::insertBranch(MachineBasicBlock &MBB,
       .add(Cond[2])
       .addMBB(TBB);
   ++Count;
-  Bytes += 4;
+  Bytes += get(Cond[0].getImm()).getSize();
   if (FBB) {
     BuildMI(&MBB, DL, get(PI32V2::GOTO_S)).addMBB(FBB);
     ++Count;
@@ -214,7 +282,8 @@ bool PI32V2InstrInfo::reverseBranchCondition(
 unsigned PI32V2InstrInfo::getInstSizeInBytes(const MachineInstr &MI) const {
   switch (MI.getOpcode()) {
   case PI32V2::PseudoCALL:
-    return 4; // call.l at most
+  case PI32V2::PseudoTAIL:
+    return 4; // call.l, goto.l at most
   case PI32V2::PseudoCALLR:
   case PI32V2::PseudoRET:
     return 2;

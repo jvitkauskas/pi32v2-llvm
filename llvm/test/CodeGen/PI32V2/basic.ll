@@ -39,12 +39,12 @@ declare void @escape(ptr)
 ; As JieLi's compiler (docs/ABI.md section 6.1): rets pushed, eight bytes for
 ; a five-byte array, its address, the call, the pop into pc.
 ; CHECK-LABEL: frame:
-; CHECK:      [--sp] = {rets}
+; CHECK:      [--sp] = rets
 ; CHECK-NEXT: sp += -8
 ; CHECK-NEXT: r0 = sp + 3
 ; CHECK-NEXT: call escape
 ; CHECK-NEXT: sp += 8
-; CHECK-NEXT: {pc} = [sp++]
+; CHECK-NEXT: pc = [sp++]
 define void @frame() nounwind {
   %a = alloca [5 x i8]
   call void @escape(ptr %a)
