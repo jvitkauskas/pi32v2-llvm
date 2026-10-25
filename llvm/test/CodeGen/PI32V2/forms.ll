@@ -170,7 +170,7 @@ done:
 
 ; Bit tests branch on the bit; a range check keeps small constants.
 ; CHECK-LABEL: bittest:
-; CHECK:      if ((r0 & 0x4) == 0) {
+; CHECK:      if ((r0 & 0x4) != 0) {
 define i32 @bittest(i32 %a) nounwind {
   %b = and i32 %a, 4
   %c = icmp ne i32 %b, 0
