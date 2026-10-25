@@ -391,6 +391,10 @@ void PI32V2AsmPrinter::emitOne(const MachineInstr *MI) {
   if (!NoCompress)
     PI32V2::compressInst(Inst, *MF->getSubtarget().getInstrInfo(),
                          *OutContext.getRegisterInfo());
+  // In an if block a goto is the 32-bit form, as JieLi's compiler emits it
+  // (it never puts the 16-bit one there, even for a near target).
+  if ((IfThen || IfElse) && Inst.getOpcode() == PI32V2::GOTO_S)
+    Inst.setOpcode(PI32V2::GOTO_L);
   EmitToStreamer(*OutStreamer, Inst);
 }
 

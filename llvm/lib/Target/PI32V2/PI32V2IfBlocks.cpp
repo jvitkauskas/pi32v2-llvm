@@ -172,6 +172,31 @@ static bool isGoto(const MachineInstr &MI) {
   return MI.getOpcode() == PI32V2::GOTO_S || MI.getOpcode() == PI32V2::GOTO_L;
 }
 
+// A call returns to the instruction after it, which then runs whatever the
+// condition was: after a call in a then part the else part would run too. A
+// call is the last instruction of a block, as in JieLi's code (also on the
+// FM-1: Felucca's panel set-up broke with an else part after one). True if a
+// call in MBB is followed by another instruction (Skip ignored).
+static bool callNotLast(const MachineBasicBlock &MBB,
+                        const MachineInstr *Skip = nullptr) {
+  bool Call = false;
+  for (const MachineInstr &MI : MBB) {
+    if (MI.isDebugInstr() || &MI == Skip)
+      continue;
+    if (Call)
+      return true;
+    Call = MI.isCall() && !MI.isTerminator();
+  }
+  return false;
+}
+
+static bool hasCall(const MachineBasicBlock &MBB) {
+  for (const MachineInstr &MI : MBB)
+    if (MI.isCall() && !MI.isTerminator())
+      return true;
+  return false;
+}
+
 static bool simplePred(MachineBasicBlock &X, MachineBasicBlock &B) {
   return X.pred_size() == 1 && *X.pred_begin() == &B && !X.hasAddressTaken() &&
          !X.isEHPad() && !X.isMachineBlockAddressTaken() &&
@@ -220,12 +245,13 @@ bool PI32V2IfBlocks::convert(MachineBasicBlock &B) {
     auto AfterT = std::next(T->getIterator());
     if (AfterT != MF.end() && &*AfterT == J && T->succ_size() == 1 &&
         *T->succ_begin() == J && partCount(*T, false, NT) && NT >= 1 &&
-        NT <= 3 && NF - 1 <= 4) {
+        NT <= 3 && NF - 1 <= 4 && !hasCall(F) && !callNotLast(*T)) {
       ElsePart = T;
       Join = J;
-    }
+    } else
+      NT = 0; // (partCount set it) no else part
   }
-  if (!ElsePart && NF > 4)
+  if (!ElsePart && (NF > 4 || callNotLast(F)))
     return false;
   if (!ElsePart && !FLast->isTerminator() &&
       !(F.succ_size() == 1 && *F.succ_begin() == T))
@@ -234,6 +260,7 @@ bool PI32V2IfBlocks::convert(MachineBasicBlock &B) {
   // the opener, with the counts
   DebugLoc DL = Br.getDebugLoc();
   unsigned Then = ElsePart ? NF - 1 : NF;
+  assert(Then >= 1 && Then <= 4 && NT <= 3 && "the opener's counts");
   BuildMI(B, BrI, DL, TII->get(Opener))
       .add(Br.getOperand(0))
       .add(Br.getOperand(1))
