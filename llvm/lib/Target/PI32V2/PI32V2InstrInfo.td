@@ -54,6 +54,7 @@ class PI32V2Pseudo<dag outs, dag ins, list<dag> pattern = []>
 }
 
 def simm10 : ImmLeaf<i32, [{ return isInt<10>(Imm); }]>;
+def modimm : ImmLeaf<i32, [{ return PI32V2::modImmRawFor(uint32_t(Imm)).has_value(); }]>;
 def calltarget : Operand<i32>;
 def i32imm_op : Operand<i32>;
 
@@ -125,6 +126,21 @@ def SELECT_CC_RRI : PI32V2Pseudo<(outs GPR:$dst),
 def SELECT_CC_RII : PI32V2Pseudo<(outs GPR:$dst),
                                  (ins GPR:$a, i32imm_op:$b, i32imm_op:$t, GPR:$f, i32imm_op:$cc)>;
 }
+// dst = f; if ((a & m) cc 0) { dst = t }: a bit test (cc eq or ne), the mask a
+// modified immediate; t a register or a constant.
+let Constraints = "$f = $dst" in {
+def SELECT_AND : PI32V2Pseudo<(outs GPR:$dst),
+                              (ins GPR:$a, i32imm_op:$m, GPR:$t, GPR:$f, i32imm_op:$cc)>;
+def SELECT_ANDI : PI32V2Pseudo<(outs GPR:$dst),
+                               (ins GPR:$a, i32imm_op:$m, i32imm_op:$t, GPR:$f, i32imm_op:$cc)>;
+}
+def selcc_bit : PatFrag<(ops node:$a, node:$m, node:$t, node:$f, node:$cc),
+                        (PI32V2selectcc (and node:$a, node:$m), (i32 0), node:$t, node:$f,
+                                        node:$cc), [{
+  auto *C = dyn_cast<ConstantSDNode>(N->getOperand(4));
+  return C && (C->getZExtValue() == ISD::SETEQ || C->getZExtValue() == ISD::SETNE);
+}]>;
+
 // A constant compared with: what the openers take (12 bits, unsigned for an
 // unsigned compare).
 def selcc_imm : PatFrag<(ops node:$a, node:$b, node:$t, node:$f, node:$cc),
@@ -153,6 +169,13 @@ def : Pat<(V (PI32V2selectcc (C GPR:$a), (C GPR:$b), (V GPR:$t), (V GPR:$f),
 def : Pat<(V (selcc_imm (i32 GPR:$a), imm:$b, (V GPR:$t), (V GPR:$f), imm:$cc)),
           (SELECT_CC_RI GPR:$a, imm:$b, GPR:$t, GPR:$f, imm:$cc)>;
 }
+let AddedComplexity = 3 in {
+def : Pat<(i32 (selcc_bit (i32 GPR:$a), modimm:$m, simm16t:$t, (i32 GPR:$f), imm:$cc)),
+          (SELECT_ANDI GPR:$a, imm:$m, imm:$t, GPR:$f, imm:$cc)>;
+foreach V = [i32, f32] in
+def : Pat<(V (selcc_bit (i32 GPR:$a), modimm:$m, (V GPR:$t), (V GPR:$f), imm:$cc)),
+          (SELECT_AND GPR:$a, imm:$m, GPR:$t, GPR:$f, imm:$cc)>;
+}
 let AddedComplexity = 1 in {
 foreach C = [i32, f32] in
 def : Pat<(i32 (PI32V2selectcc (C GPR:$a), (C GPR:$b), simm16t:$t, (i32 GPR:$f),
@@ -169,10 +192,12 @@ def : Pat<(i32 (selcc_imm (i32 GPR:$a), imm:$b, simm16t:$t, (i32 GPR:$f), imm:$c
 def simm14 : ImmLeaf<i32, [{ return isInt<14>(Imm); }]>;
 def simm16 : ImmLeaf<i32, [{ return isInt<16>(Imm); }]>;
 def shamt : ImmLeaf<i32, [{ return Imm > 0 && Imm < 32; }]>;
-def modimm : ImmLeaf<i32, [{ return PI32V2::modImmRawFor(uint32_t(Imm)).has_value(); }]>;
 
 // Constants and addresses.
 def : Pat<(i32 simm16:$v), (LI_S16 imm:$v)>;
+// a modified immediate (0x11C00, 0x50000, ...): the 4-byte li, not the 6-byte one
+let AddedComplexity = -1 in
+def : Pat<(i32 modimm:$v), (LI_MODIMM imm:$v)>;
 def : Pat<(i32 imm:$v), (LI_U32 imm:$v)>;
 def : Pat<(PI32V2wrapper tglobaladdr:$a), (LI_U32 tglobaladdr:$a)>;
 def : Pat<(PI32V2wrapper texternalsym:$a), (LI_U32 texternalsym:$a)>;
@@ -300,11 +325,25 @@ def : Pat<(store (i32 GPR:$v), (AddrW i32:$b, i32:$n)), (ST_W_L GPR:$b, $n, GPR:
 def : Pat<(truncstorei8 (i32 GPR:$v), (AddrB i32:$b, i32:$n)), (ST_B_L GPR:$b, $n, GPR:$v)>;
 def : Pat<(truncstorei16 (i32 GPR:$v), (AddrH i32:$b, i32:$n)), (ST_H_L GPR:$b, $n, GPR:$v)>;
 
+// Stores at sp plus a constant (outgoing arguments): the [sp+n] forms.
+def AddrSPW : ComplexPattern<iPTR, 1, "selectAddrSPW", [], []>;
+def AddrSPH : ComplexPattern<iPTR, 1, "selectAddrSPH", [], []>;
+def AddrSPB : ComplexPattern<iPTR, 1, "selectAddrSPB", [], []>;
+let AddedComplexity = 40 in {
+foreach T = [i32, f32] in
+def : Pat<(store (T GPR:$v), (AddrSPW i32:$n)), (ST_W_SP_L $n, GPR:$v)>;
+def : Pat<(truncstorei16 (i32 GPR:$v), (AddrSPH i32:$n)), (ST_H_SP_L $n, GPR:$v)>;
+def : Pat<(truncstorei8 (i32 GPR:$v), (AddrSPB i32:$n)), (ST_B_SP_L $n, GPR:$v)>;
+}
+
 // Read-modify-write of a word in memory, and a constant stored, as JieLi's
 // compiler makes register updates: [r+n] |= m, [r+n] &= ~s, [r+n] = m, ...
 def AddrRMW : ComplexPattern<iPTR, 2, "selectAddrRMW", [], []>;
 def nmodimm : ImmLeaf<i32, [{ return PI32V2::modImmRawFor(~uint32_t(Imm)).has_value(); }]>;
 def simm12rmw : ImmLeaf<i32, [{ return isInt<12>(Imm); }]>;
+def modimm_wide : ImmLeaf<i32, [{
+  return PI32V2::modImmRawFor(uint32_t(Imm)).has_value() && !isUInt<8>(Imm);
+}]>;
 let AddedComplexity = 10 in {
 multiclass RMWReg<SDNode Op, Instruction I> {
   def : Pat<(store (Op (i32 (load (AddrRMW i32:$b, i32:$n))), i32:$s),
@@ -332,7 +371,8 @@ defm : RMWImm<and, modimm, RMW_AND_MODIMM>;
 defm : RMWImm<and, nmodimm, RMW_AND_NMODIMM>;
 defm : RMWImm<add, simm12rmw, RMW_ADD_S12>;
 defm : RMWImm<add, modimm, RMW_ADD_MODIMM>;
-def : Pat<(store (i32 modimm:$m), (AddrRMW i32:$b, i32:$n)),
+// (a small constant is a 2-byte li, kept in a register for the next store)
+def : Pat<(store (i32 modimm_wide:$m), (AddrRMW i32:$b, i32:$n)),
           (ST_W_MODIMM GPR:$b, $n, imm:$m)>;
 }
 
@@ -343,7 +383,7 @@ def addidx : PatFrag<(ops node:$b, node:$i), (add node:$b, node:$i), [{
   return !isa<ConstantSDNode>(N->getOperand(1)) &&
          !isa<ConstantSDNode>(N->getOperand(0));
 }]>;
-let AddedComplexity = 5 in {
+let AddedComplexity = 30 in {
 foreach T = [i32, f32] in {
 def : Pat<(T (load (addidx i32:$b, (shl i32:$i, (i32 2))))), (LD_W_IDXS GPR:$b, GPR:$i)>;
 def : Pat<(T (load (addidx i32:$b, i32:$i))), (LD_W_IDX GPR:$b, GPR:$i)>;
@@ -403,6 +443,19 @@ defm : BrCCImm<SETGE, simm10, BGES_RI, simm12, BGES_RI_L>;
 defm : BrCCImm<SETLT, simm10, BLTS_RI, simm12, BLTS_RI_L>;
 defm : BrCCImm<SETGT, simm10, BGTS_RI, simm12, BGTS_RI_L>;
 defm : BrCCImm<SETLE, simm10, BLES_RI, simm12, BLES_RI_L>;
+// Bit tests: if ((r & bit) == 0) goto, a modified-immediate mask (48-bit
+// form) or a register.
+def onebit : ImmLeaf<i32, [{ return isPowerOf2_32(uint32_t(Imm)); }]>;
+def : Pat<(brcc SETEQ, (and i32:$a, onebit:$n), 0, bb:$t), (BEQ_AND_RI GPR:$a, imm:$n, bb:$t)>;
+def : Pat<(brcc SETNE, (and i32:$a, onebit:$n), 0, bb:$t), (BNE_AND_RI GPR:$a, imm:$n, bb:$t)>;
+let AddedComplexity = -1 in {
+def : Pat<(brcc SETEQ, (and i32:$a, modimm:$n), 0, bb:$t), (BEQ_AND_MODIMM_RI_L GPR:$a, imm:$n, bb:$t)>;
+def : Pat<(brcc SETNE, (and i32:$a, modimm:$n), 0, bb:$t), (BNE_AND_MODIMM_RI_L GPR:$a, imm:$n, bb:$t)>;
+}
+let AddedComplexity = -2 in {
+def : Pat<(brcc SETEQ, (and i32:$a, i32:$b), 0, bb:$t), (BEQ_AND_RR GPR:$a, GPR:$b, bb:$t)>;
+def : Pat<(brcc SETNE, (and i32:$a, i32:$b), 0, bb:$t), (BNE_AND_RR GPR:$a, GPR:$b, bb:$t)>;
+}
 def : Pat<(br bb:$t), (GOTO_S bb:$t)>;
 def : Pat<(brind i32:$a), (GOTO_R GPR:$a)>;
 

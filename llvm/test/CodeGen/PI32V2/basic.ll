@@ -52,8 +52,10 @@ define void @frame() nounwind {
 
 declare i32 @many(i32, i32, i32, i32, i32, i32)
 ; CHECK-LABEL: stackargs:
-; CHECK:      [r0+4] = r1
-; CHECK:      [r0+0] = r1
+; CHECK:      r0 = 6
+; CHECK-NEXT: [sp+4] = r0
+; CHECK-NEXT: r0 = 5
+; CHECK-NEXT: [sp] = r0
 ; CHECK:      r3 = 4
 ; CHECK:      call many
 define i32 @stackargs() nounwind {

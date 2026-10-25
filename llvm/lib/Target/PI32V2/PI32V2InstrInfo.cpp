@@ -158,6 +158,12 @@ unsigned PI32V2InstrInfo::inverseBranch(unsigned Opc) {
   case PI32V2::BFULE_RR_L: return PI32V2::BFGT_RR_L;
   case PI32V2::BFGE_RR_L: return PI32V2::BFULT_RR_L;
   case PI32V2::BFULT_RR_L: return PI32V2::BFGE_RR_L;
+  case PI32V2::BEQ_AND_RI: return PI32V2::BNE_AND_RI;
+  case PI32V2::BNE_AND_RI: return PI32V2::BEQ_AND_RI;
+  case PI32V2::BEQ_AND_RR: return PI32V2::BNE_AND_RR;
+  case PI32V2::BNE_AND_RR: return PI32V2::BEQ_AND_RR;
+  case PI32V2::BEQ_AND_MODIMM_RI_L: return PI32V2::BNE_AND_MODIMM_RI_L;
+  case PI32V2::BNE_AND_MODIMM_RI_L: return PI32V2::BEQ_AND_MODIMM_RI_L;
   default: return 0;
   }
 }
@@ -291,6 +297,8 @@ unsigned PI32V2InstrInfo::getInstSizeInBytes(const MachineInstr &MI) const {
   case PI32V2::LDBU_POST: case PI32V2::LDBS_POST: case PI32V2::STW_POST:
   case PI32V2::STH_POST: case PI32V2::STB_POST:
     return 4; // the .pin.l form at most
+  case PI32V2::SELECT_AND:
+  case PI32V2::SELECT_ANDI:
   case PI32V2::SELECT_CC:
   case PI32V2::SELECT_CC_RI:
   case PI32V2::SELECT_CC_RRI:

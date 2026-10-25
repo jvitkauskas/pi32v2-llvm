@@ -98,6 +98,13 @@ unsigned PI32V2::openerForBranch(unsigned Br) {
   case PI32V2::BFULT_RR: case PI32V2::BFULT_RR_L: return PI32V2::IFF_ULT_RR;
   case PI32V2::BFGT_RR: case PI32V2::BFGT_RR_L: return PI32V2::IFF_GT_RR;
   case PI32V2::BFULE_RR: case PI32V2::BFULE_RR_L: return PI32V2::IFF_ULE_RR;
+  // a bit (a single-bit mask is a modified immediate) or a mask
+  case PI32V2::BEQ_AND_RI: case PI32V2::BEQ_AND_MODIMM_RI_L:
+    return PI32V2::IF_EQ_AND_RM;
+  case PI32V2::BNE_AND_RI: case PI32V2::BNE_AND_MODIMM_RI_L:
+    return PI32V2::IF_NE_AND_RM;
+  case PI32V2::BEQ_AND_RR: return PI32V2::IF_EQ_AND_RR;
+  case PI32V2::BNE_AND_RR: return PI32V2::IF_NE_AND_RR;
   default: return 0;
   }
 }
@@ -115,7 +122,8 @@ bool PI32V2::isIfOpener(unsigned Opc) {
   case PI32V2::IFF_EQ_RR: case PI32V2::IFF_UNE_RR: case PI32V2::IFF_UGE_RR:
   case PI32V2::IFF_LT_RR: case PI32V2::IFF_UGT_RR: case PI32V2::IFF_LE_RR:
   case PI32V2::IFF_GE_RR: case PI32V2::IFF_ULT_RR: case PI32V2::IFF_GT_RR:
-  case PI32V2::IFF_ULE_RR:
+  case PI32V2::IFF_ULE_RR: case PI32V2::IF_EQ_AND_RM: case PI32V2::IF_NE_AND_RM:
+  case PI32V2::IF_EQ_AND_RR: case PI32V2::IF_NE_AND_RR:
     return true;
   default:
     return false;
@@ -124,7 +132,8 @@ bool PI32V2::isIfOpener(unsigned Opc) {
 
 // A select is an if block of its own when emitted.
 static bool isSelect(unsigned Opc) {
-  return Opc == PI32V2::SELECT_CC || Opc == PI32V2::SELECT_CC_RI ||
+  return Opc == PI32V2::SELECT_AND || Opc == PI32V2::SELECT_ANDI ||
+         Opc == PI32V2::SELECT_CC || Opc == PI32V2::SELECT_CC_RI ||
          Opc == PI32V2::SELECT_CC_RRI || Opc == PI32V2::SELECT_CC_RII;
 }
 
