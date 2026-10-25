@@ -46,6 +46,7 @@ class PI32V2Pseudo<dag outs, dag ins, list<dag> pattern = []>
   let hasSideEffects = 0;
 }
 
+def simm10 : ImmLeaf<i32, [{ return isInt<10>(Imm); }]>;
 def calltarget : Operand<i32>;
 def i32imm_op : Operand<i32>;
 
@@ -94,16 +95,54 @@ def STH_FI : PI32V2Pseudo<(outs), (ins GPR:$r, i32imm_op:$fi, i32imm_op:$off)>;
 }
 def ADDR_FI : PI32V2Pseudo<(outs GPR:$r), (ins i32imm_op:$fi, i32imm_op:$off)>;
 
-// select: a branch diamond (PI32V2TargetLowering::EmitInstrWithCustomInserter).
-let usesCustomInserter = 1 in
+// select: dst = f; if (a cc b) { dst = t }, the destination being f's
+// register (PI32V2AsmPrinter emits the block). b and t may be constants.
+let Constraints = "$f = $dst" in {
 def SELECT_CC : PI32V2Pseudo<(outs GPR:$dst),
                              (ins GPR:$a, GPR:$b, GPR:$t, GPR:$f, i32imm_op:$cc)>;
-// Integer or float values, compared as integers or floats.
-foreach V = [i32, f32] in
+def SELECT_CC_RI : PI32V2Pseudo<(outs GPR:$dst),
+                                (ins GPR:$a, i32imm_op:$b, GPR:$t, GPR:$f, i32imm_op:$cc)>;
+def SELECT_CC_RRI : PI32V2Pseudo<(outs GPR:$dst),
+                                 (ins GPR:$a, GPR:$b, i32imm_op:$t, GPR:$f, i32imm_op:$cc)>;
+def SELECT_CC_RII : PI32V2Pseudo<(outs GPR:$dst),
+                                 (ins GPR:$a, i32imm_op:$b, i32imm_op:$t, GPR:$f, i32imm_op:$cc)>;
+}
+// A constant compared with: what the openers take (12 bits, unsigned for an
+// unsigned compare).
+def selcc_imm : PatFrag<(ops node:$a, node:$b, node:$t, node:$f, node:$cc),
+                        (PI32V2selectcc node:$a, node:$b, node:$t, node:$f, node:$cc), [{
+  auto *B = dyn_cast<ConstantSDNode>(N->getOperand(1));
+  auto *C = dyn_cast<ConstantSDNode>(N->getOperand(4));
+  if (!B || !C)
+    return false;
+  int64_t V = B->getSExtValue();
+  switch (ISD::CondCode(C->getZExtValue())) {
+  case ISD::SETUGE: case ISD::SETULT: case ISD::SETUGT: case ISD::SETULE:
+    return isUInt<12>(V);
+  case ISD::SETEQ: case ISD::SETNE: case ISD::SETGE: case ISD::SETLT:
+  case ISD::SETGT: case ISD::SETLE:
+    return isInt<12>(V);
+  default:
+    return false;
+  }
+}]>;
+def simm16t : ImmLeaf<i32, [{ return isInt<16>(Imm); }]>;
+foreach V = [i32, f32] in {
 foreach C = [i32, f32] in
 def : Pat<(V (PI32V2selectcc (C GPR:$a), (C GPR:$b), (V GPR:$t), (V GPR:$f),
                              imm:$cc)),
           (SELECT_CC GPR:$a, GPR:$b, GPR:$t, GPR:$f, imm:$cc)>;
+def : Pat<(V (selcc_imm (i32 GPR:$a), imm:$b, (V GPR:$t), (V GPR:$f), imm:$cc)),
+          (SELECT_CC_RI GPR:$a, imm:$b, GPR:$t, GPR:$f, imm:$cc)>;
+}
+let AddedComplexity = 1 in {
+foreach C = [i32, f32] in
+def : Pat<(i32 (PI32V2selectcc (C GPR:$a), (C GPR:$b), simm16t:$t, (i32 GPR:$f),
+                               imm:$cc)),
+          (SELECT_CC_RRI GPR:$a, GPR:$b, imm:$t, GPR:$f, imm:$cc)>;
+def : Pat<(i32 (selcc_imm (i32 GPR:$a), imm:$b, simm16t:$t, (i32 GPR:$f), imm:$cc)),
+          (SELECT_CC_RII GPR:$a, imm:$b, imm:$t, GPR:$f, imm:$cc)>;
+}
 
 //===----------------------------------------------------------------------===//
 // Patterns
@@ -237,6 +276,36 @@ def : Pat<(store (i32 GPR:$v), (AddrW i32:$b, i32:$n)), (ST_W_L GPR:$b, $n, GPR:
 def : Pat<(truncstorei8 (i32 GPR:$v), (AddrB i32:$b, i32:$n)), (ST_B_L GPR:$b, $n, GPR:$v)>;
 def : Pat<(truncstorei16 (i32 GPR:$v), (AddrH i32:$b, i32:$n)), (ST_H_L GPR:$b, $n, GPR:$v)>;
 
+// Base plus index register, the index scaled by the access size or not:
+// [b+i<<2], h[b+i<<1], [b+i], b[b+i] (an index that is a constant is an
+// offset, the forms above).
+def addidx : PatFrag<(ops node:$b, node:$i), (add node:$b, node:$i), [{
+  return !isa<ConstantSDNode>(N->getOperand(1)) &&
+         !isa<ConstantSDNode>(N->getOperand(0));
+}]>;
+let AddedComplexity = 5 in {
+foreach T = [i32, f32] in {
+def : Pat<(T (load (addidx i32:$b, (shl i32:$i, (i32 2))))), (LD_W_IDXS GPR:$b, GPR:$i)>;
+def : Pat<(T (load (addidx i32:$b, i32:$i))), (LD_W_IDX GPR:$b, GPR:$i)>;
+def : Pat<(store (T GPR:$v), (addidx i32:$b, (shl i32:$i, (i32 2)))),
+          (ST_W_IDXS GPR:$b, GPR:$i, GPR:$v)>;
+def : Pat<(store (T GPR:$v), (addidx i32:$b, i32:$i)), (ST_W_IDX GPR:$b, GPR:$i, GPR:$v)>;
+}
+def : Pat<(i32 (zextloadi16 (addidx i32:$b, (shl i32:$i, (i32 1))))), (LD_HU_IDXS GPR:$b, GPR:$i)>;
+def : Pat<(i32 (extloadi16 (addidx i32:$b, (shl i32:$i, (i32 1))))), (LD_HU_IDXS GPR:$b, GPR:$i)>;
+def : Pat<(i32 (sextloadi16 (addidx i32:$b, (shl i32:$i, (i32 1))))), (LD_HS_IDXS GPR:$b, GPR:$i)>;
+def : Pat<(i32 (zextloadi16 (addidx i32:$b, i32:$i))), (LD_HU_IDX GPR:$b, GPR:$i)>;
+def : Pat<(i32 (extloadi16 (addidx i32:$b, i32:$i))), (LD_HU_IDX GPR:$b, GPR:$i)>;
+def : Pat<(i32 (sextloadi16 (addidx i32:$b, i32:$i))), (LD_HS_IDX GPR:$b, GPR:$i)>;
+def : Pat<(i32 (zextloadi8 (addidx i32:$b, i32:$i))), (LD_BU_IDX GPR:$b, GPR:$i)>;
+def : Pat<(i32 (extloadi8 (addidx i32:$b, i32:$i))), (LD_BU_IDX GPR:$b, GPR:$i)>;
+def : Pat<(i32 (sextloadi8 (addidx i32:$b, i32:$i))), (LD_BS_IDX GPR:$b, GPR:$i)>;
+def : Pat<(truncstorei16 (i32 GPR:$v), (addidx i32:$b, (shl i32:$i, (i32 1)))),
+          (ST_H_IDXS GPR:$b, GPR:$i, GPR:$v)>;
+def : Pat<(truncstorei16 (i32 GPR:$v), (addidx i32:$b, i32:$i)), (ST_H_IDX GPR:$b, GPR:$i, GPR:$v)>;
+def : Pat<(truncstorei8 (i32 GPR:$v), (addidx i32:$b, i32:$i)), (ST_B_IDX GPR:$b, GPR:$i, GPR:$v)>;
+}
+
 // Branches: compare two registers and branch; `if` compares unsigned, `ifs`
 // signed (pi32v2-isa docs/ISA.md). The assembler backend relaxes the short
 // forms.
@@ -256,7 +325,6 @@ defm : BrCC<SETLE, BLES_RR>;
 // Compared with a constant: the forms with a 10-bit constant (signed for ==,
 // != and ifs, unsigned for if), else those with 12 bits (the assembler
 // backend relaxes either for the branch distance).
-def simm10 : ImmLeaf<i32, [{ return isInt<10>(Imm); }]>;
 def uimm10 : ImmLeaf<i32, [{ return isUInt<10>(Imm); }]>;
 def simm12 : ImmLeaf<i32, [{ return isInt<12>(Imm); }]>;
 def uimm12 : ImmLeaf<i32, [{ return isUInt<12>(Imm); }]>;

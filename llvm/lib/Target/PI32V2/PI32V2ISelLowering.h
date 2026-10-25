@@ -21,6 +21,13 @@ class PI32V2TargetLowering : public TargetLowering {
   const PI32V2Subtarget &Subtarget;
 
 public:
+  // The divider is one instruction: optimizing for size, a division by a
+  // constant stays a division (as JieLi's compiler makes it), else it is the
+  // faster multiply sequence.
+  bool isIntDivCheap(EVT VT, AttributeList Attr) const override {
+    return Attr.hasFnAttr(Attribute::OptimizeForSize) ||
+           Attr.hasFnAttr(Attribute::MinSize);
+  }
   // Inline memcpy/memset accesses are as wide as both ends' alignment allows
   // (no misaligned words); a copy that would take too many becomes a call.
   EVT getOptimalMemOpType(LLVMContext &Context, const MemOp &Op,
@@ -64,10 +71,6 @@ public:
   std::pair<unsigned, const TargetRegisterClass *>
   getRegForInlineAsmConstraint(const TargetRegisterInfo *TRI,
                                StringRef Constraint, MVT VT) const override;
-
-  MachineBasicBlock *
-  EmitInstrWithCustomInserter(MachineInstr &MI,
-                              MachineBasicBlock *BB) const override;
 
 private:
   SDValue lowerAddress(SDValue Op, SelectionDAG &DAG) const;

@@ -14,6 +14,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "PI32V2ISelLowering.h"
+#include "PI32V2.h"
 #include "MCTargetDesc/PI32V2MCTargetDesc.h"
 #include "PI32V2InstrInfo.h"
 #include "PI32V2MachineFunctionInfo.h"
@@ -28,8 +29,7 @@
 
 using namespace llvm;
 
-// Marks a select's condition as a float compare (lowerSelectCC).
-static constexpr unsigned SelectFloat = 0x100;
+using PI32V2::SelectFloat;
 
 #define DEBUG_TYPE "pi32v2-lower"
 
@@ -481,7 +481,7 @@ PI32V2TargetLowering::getRegForInlineAsmConstraint(const TargetRegisterInfo *TRI
 // ---- select -----------------------------------------------------------------
 
 // The compare-and-branch of a condition, as the brcc patterns choose it.
-static unsigned branchFor(unsigned Cond) {
+unsigned PI32V2::branchForCond(unsigned Cond) {
   if (Cond & SelectFloat) {
     switch (ISD::CondCode(Cond & ~SelectFloat)) {
     case ISD::SETOEQ: case ISD::SETEQ: return PI32V2::BFEQ_RR;
@@ -514,40 +514,21 @@ static unsigned branchFor(unsigned Cond) {
   }
 }
 
-MachineBasicBlock *
-PI32V2TargetLowering::EmitInstrWithCustomInserter(MachineInstr &MI,
-                                                  MachineBasicBlock *BB) const {
-  assert(MI.getOpcode() == PI32V2::SELECT_CC && "unexpected instruction");
-  const TargetInstrInfo &TII = *Subtarget.getInstrInfo();
-  DebugLoc DL = MI.getDebugLoc();
-  const BasicBlock *LLVMBB = BB->getBasicBlock();
-  MachineFunction *MF = BB->getParent();
-  MachineFunction::iterator It = ++BB->getIterator();
-
-  //   BB:    if (a cc b) goto Sink      (the true value)
-  //   False: fall through to Sink       (the false value)
-  //   Sink:  dst = phi [t, BB], [f, False]
-  MachineBasicBlock *False = MF->CreateMachineBasicBlock(LLVMBB);
-  MachineBasicBlock *Sink = MF->CreateMachineBasicBlock(LLVMBB);
-  MF->insert(It, False);
-  MF->insert(It, Sink);
-  Sink->splice(Sink->begin(), BB,
-               std::next(MachineBasicBlock::iterator(MI)), BB->end());
-  Sink->transferSuccessorsAndUpdatePHIs(BB);
-  BB->addSuccessor(False);
-  BB->addSuccessor(Sink);
-  False->addSuccessor(Sink);
-
-  BuildMI(BB, DL, TII.get(branchFor(MI.getOperand(5).getImm())))
-      .addReg(MI.getOperand(1).getReg())
-      .addReg(MI.getOperand(2).getReg())
-      .addMBB(Sink);
-  BuildMI(*Sink, Sink->begin(), DL, TII.get(PI32V2::PHI),
-          MI.getOperand(0).getReg())
-      .addReg(MI.getOperand(3).getReg())
-      .addMBB(BB)
-      .addReg(MI.getOperand(4).getReg())
-      .addMBB(False);
-  MI.eraseFromParent();
-  return Sink;
+// The compare-with-constant form of an integer compare-two-registers branch.
+unsigned PI32V2::branchWithImm(unsigned Br) {
+  switch (Br) {
+  case PI32V2::BEQ_RR: return PI32V2::BEQ_RI;
+  case PI32V2::BNE_RR: return PI32V2::BNE_RI;
+  case PI32V2::BGE_RR: return PI32V2::BGE_RI;
+  case PI32V2::BLT_RR: return PI32V2::BLT_RI;
+  case PI32V2::BGT_RR: return PI32V2::BGT_RI;
+  case PI32V2::BLE_RR: return PI32V2::BLE_RI;
+  case PI32V2::BGES_RR: return PI32V2::BGES_RI;
+  case PI32V2::BLTS_RR: return PI32V2::BLTS_RI;
+  case PI32V2::BGTS_RR: return PI32V2::BGTS_RI;
+  case PI32V2::BLES_RR: return PI32V2::BLES_RI;
+  default:
+    report_fatal_error("PI32V2: no compare-with-constant branch");
+  }
 }
+

@@ -11,9 +11,11 @@ define i32 @add(i32 %a, i32 %b) nounwind {
 }
 
 ; CHECK-LABEL: max:
-; CHECK:      ifs (r0 > r1) goto .LBB1_2
-; CHECK:      r0 = r1
-; CHECK:      rts
+; CHECK:      ifs (r0 > r1) {
+; CHECK-NEXT: r1 = r0
+; CHECK-NEXT: }
+; CHECK-NEXT: r0 = r1
+; CHECK-NEXT: rts
 define i32 @max(i32 %a, i32 %b) nounwind {
   %c = icmp sgt i32 %a, %b
   %r = select i1 %c, i32 %a, i32 %b
