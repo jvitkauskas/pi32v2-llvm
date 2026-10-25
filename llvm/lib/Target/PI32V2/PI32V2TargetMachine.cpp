@@ -78,6 +78,16 @@ public:
     return getTM<PI32V2TargetMachine>();
   }
 
+  // Static globals in one block, reached from one address by offset
+  // (JieLi's compiler makes .L_MergedGlobals too); 255: the reach of a byte
+  // access's offset.
+  bool addPreISel() override {
+    if (getOptLevel() != CodeGenOptLevel::None)
+      addPass(createGlobalMergePass(TM, 255, /*OnlyOptimizeForSize=*/false,
+                                    /*MergeExternalByDefault=*/false));
+    return false;
+  }
+
   void addIRPasses() override {
     addPass(createAtomicExpandLegacyPass());
     TargetPassConfig::addIRPasses();

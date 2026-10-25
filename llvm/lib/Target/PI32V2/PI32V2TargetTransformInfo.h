@@ -61,36 +61,23 @@ public:
     return 2 * TTI::TCC_Basic; // li.u32
   }
 
-  // A constant an instruction holds itself costs nothing.
+  // Only an address is worth keeping in a register for its neighbours (a
+  // register address in a load or store, or a pointer made from it); any other
+  // constant goes with its instruction, or is loaded where it is used, so the
+  // hoisting pass does not rebase it on an unrelated one.
   InstructionCost
   getIntImmCostInst(unsigned Opc, unsigned Idx, const APInt &Imm, Type *Ty,
                     TTI::TargetCostKind CostKind,
                     Instruction *Inst = nullptr) const override {
-    if (Imm.getBitWidth() <= 32) {
-      int64_t V = Imm.getSExtValue();
-      bool Mod = PI32V2::modImmRawFor(uint32_t(V)).has_value();
-      switch (Opc) {
-      case Instruction::Add:
-      case Instruction::Sub:
-        if (Idx == 1 && (isInt<14>(V) || Mod))
-          return TTI::TCC_Free;
-        break;
-      case Instruction::And:
-      case Instruction::Or:
-      case Instruction::Xor:
-      case Instruction::Mul:
-        if (Idx == 1 && Mod)
-          return TTI::TCC_Free;
-        break;
-      case Instruction::ICmp:
-        if (Idx == 1 && isInt<12>(V))
-          return TTI::TCC_Free;
-        break;
-      default:
-        break;
-      }
+    switch (Opc) {
+    case Instruction::Load:
+    case Instruction::Store:
+    case Instruction::IntToPtr:
+    case Instruction::GetElementPtr:
+      return getIntImmCost(Imm, Ty, CostKind);
+    default:
+      return TTI::TCC_Free;
     }
-    return getIntImmCost(Imm, Ty, CostKind);
   }
 
   InstructionCost
