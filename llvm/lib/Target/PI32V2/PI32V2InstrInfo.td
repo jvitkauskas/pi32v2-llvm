@@ -141,6 +141,64 @@ def : Pat<(srl GPR:$a, shamt:$n), (LSR_RRI_L GPR:$a, imm:$n)>;
 def : Pat<(sra GPR:$a, shamt:$n), (ASR_RRI_L GPR:$a, imm:$n)>;
 def : Pat<(mul GPR:$a, GPR:$b), (MUL_RRR GPR:$a, GPR:$b)>;
 def : Pat<(sdiv GPR:$a, GPR:$b), (DIV_S_RRR GPR:$a, GPR:$b)>;
+def : Pat<(mul GPR:$a, modimm:$n), (MUL_MODIMM_RRI GPR:$a, imm:$n)>;
+def : Pat<(ctlz GPR:$a), (CLZ_RR GPR:$a)>;
+def : Pat<(bswap GPR:$a), (REV8_RR GPR:$a)>;
+def : Pat<(rotr GPR:$a, GPR:$n), (ROR_RRR GPR:$a, GPR:$n)>;
+def : Pat<(rotr GPR:$a, shamt:$n), (ROR_RRI GPR:$a, imm:$n)>;
+
+// Bit fields: sextra/uextra(x, p:position, l:length), length 1..31. A sign
+// or zero extension of a byte or halfword is one too (the assembler backend
+// puts it in the 16-bit .b0/.l forms when the registers allow).
+def : Pat<(sext_inreg GPR:$a, i8), (SEXTRA_RRII GPR:$a, 0, 8)>;
+def : Pat<(sext_inreg GPR:$a, i16), (SEXTRA_RRII GPR:$a, 0, 16)>;
+def : Pat<(sext_inreg GPR:$a, i1), (SEXTRA_RRII GPR:$a, 0, 1)>;
+def lowmask : ImmLeaf<i32, [{ return isMask_32(Imm) && Imm != -1; }]>;
+def masklen : SDNodeXForm<imm, [{
+  return CurDAG->getTargetConstant(llvm::popcount(uint32_t(N->getZExtValue())),
+                                   SDLoc(N), MVT::i32);
+}]>;
+def lowmask_nomod : ImmLeaf<i32, [{
+  return isMask_32(Imm) && Imm != -1 &&
+         !PI32V2::modImmRawFor(uint32_t(Imm)).has_value();
+}]>;
+// (x >> p) & (2^l - 1), the field inside the word
+def fieldfits : PatFrag<(ops node:$x, node:$p, node:$m),
+                        (and (srl node:$x, node:$p), node:$m), [{
+  uint64_t P = cast<ConstantSDNode>(N->getOperand(0)->getOperand(1))->getZExtValue();
+  uint64_t M = cast<ConstantSDNode>(N->getOperand(1))->getZExtValue();
+  return P + llvm::popcount(M) <= 32;
+}]>;
+def : Pat<(fieldfits GPR:$a, shamt:$p, lowmask:$m),
+          (UEXTRA_RRII GPR:$a, imm:$p, (masklen imm:$m))>;
+def : Pat<(and GPR:$a, 255), (UEXTRA_RRII GPR:$a, 0, 8)>;
+def : Pat<(and GPR:$a, 65535), (UEXTRA_RRII GPR:$a, 0, 16)>;
+def : Pat<(and GPR:$a, lowmask_nomod:$m), (UEXTRA_RRII GPR:$a, 0, (masklen imm:$m))>;
+// (x << a) >> b with b >= a: the bits a..31-a... of x, at p = b - a, l = 32 - b
+def shlsr_p : SDNodeXForm<srl, [{
+  uint64_t A = cast<ConstantSDNode>(N->getOperand(0)->getOperand(1))->getZExtValue();
+  uint64_t B = cast<ConstantSDNode>(N->getOperand(1))->getZExtValue();
+  return CurDAG->getTargetConstant(B - A, SDLoc(N), MVT::i32);
+}]>;
+def shlsr_l : SDNodeXForm<srl, [{
+  uint64_t B = cast<ConstantSDNode>(N->getOperand(1))->getZExtValue();
+  return CurDAG->getTargetConstant(32 - B, SDLoc(N), MVT::i32);
+}]>;
+def shlsr : PatFrag<(ops node:$x, node:$a, node:$b), (srl (shl node:$x, node:$a), node:$b), [{
+  uint64_t A = cast<ConstantSDNode>(N->getOperand(0)->getOperand(1))->getZExtValue();
+  uint64_t B = cast<ConstantSDNode>(N->getOperand(1))->getZExtValue();
+  return B >= A;
+}]>;
+def shlsra : PatFrag<(ops node:$x, node:$a, node:$b), (sra (shl node:$x, node:$a), node:$b), [{
+  uint64_t A = cast<ConstantSDNode>(N->getOperand(0)->getOperand(1))->getZExtValue();
+  uint64_t B = cast<ConstantSDNode>(N->getOperand(1))->getZExtValue();
+  return B >= A;
+}]>;
+def : Pat<(shlsr:$n GPR:$x, shamt, shamt),
+          (UEXTRA_RRII GPR:$x, (shlsr_p $n), (shlsr_l $n))>;
+def : Pat<(shlsra:$n GPR:$x, shamt, shamt),
+          (SEXTRA_RRII GPR:$x, (shlsr_p $n), (shlsr_l $n))>;
+
 // The carry chain of a 64-bit add or subtract: psr's C, which every add and
 // subtract writes (C = no borrow for a subtract, subc subtracts !C).
 def : Pat<(addc i32:$a, i32:$b), (ADD_RRR_L GPR:$a, GPR:$b)>;

@@ -73,8 +73,8 @@ PI32V2TargetLowering::PI32V2TargetLowering(const TargetMachine &TM,
 
   for (unsigned Op :
        {ISD::SREM, ISD::UREM, ISD::SDIVREM, ISD::UDIVREM, ISD::MULHS,
-        ISD::MULHU, ISD::ROTL, ISD::ROTR,
-        ISD::CTPOP, ISD::CTLZ, ISD::CTTZ, ISD::BSWAP, ISD::SHL_PARTS,
+        ISD::MULHU, ISD::ROTL,
+        ISD::CTPOP, ISD::CTTZ, ISD::SHL_PARTS,
         ISD::SRA_PARTS, ISD::SRL_PARTS, ISD::DYNAMIC_STACKALLOC,
         ISD::STACKSAVE, ISD::STACKRESTORE})
     setOperationAction(Op, MVT::i32, Expand);
@@ -91,8 +91,7 @@ PI32V2TargetLowering::PI32V2TargetLowering(const TargetMachine &TM,
   setOperationAction(ISD::DYNAMIC_STACKALLOC, MVT::i32, Expand);
   setOperationAction(ISD::STACKSAVE, MVT::Other, Expand);
   setOperationAction(ISD::STACKRESTORE, MVT::Other, Expand);
-  for (MVT VT : {MVT::i1, MVT::i8, MVT::i16})
-    setOperationAction(ISD::SIGN_EXTEND_INREG, VT, Expand);
+  // sext_inreg is a sextra (PI32V2InstrInfo.td).
   // Single-precision float in the (f) forms (PI32V2InstrInfo.td); what they do
   // not do is integer code or a library call.
   if (STI.hasFPRev1()) {
@@ -265,6 +264,19 @@ SDValue PI32V2TargetLowering::LowerFormalArguments(
     }
   }
   return Chain;
+}
+
+EVT PI32V2TargetLowering::getOptimalMemOpType(
+    LLVMContext &Context, const MemOp &Op,
+    const AttributeList &FuncAttributes) const {
+  Align A = Op.isFixedDstAlign() ? Op.getDstAlign() : Align(4);
+  if (Op.isMemcpyOrMemmove())
+    A = std::min(A, Op.getSrcAlign());
+  if (A >= 4 && Op.size() >= 4)
+    return MVT::i32;
+  if (A >= 2 && Op.size() >= 2)
+    return MVT::i16;
+  return MVT::i8;
 }
 
 std::pair<const TargetRegisterClass *, uint8_t>

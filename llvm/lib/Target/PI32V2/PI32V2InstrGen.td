@@ -4426,6 +4426,8 @@ def MUL_MODIMM_RRI : PI32V2Inst32<(outs GPR:$r), (ins GPR:$s, Opmodimm_F_F_F:$n)
   let Inst{2} = n{2};
   let Inst{1} = n{1};
   let Inst{0} = n{0};
+  let hasSideEffects = 0;
+  let Defs = [PSR];
 }
 def MUL_RRR : PI32V2Inst32<(outs GPR:$r), (ins GPR:$s, GPR:$t), "${r} = ${s} * ${t}"> {
   bits<4> r;
@@ -5365,6 +5367,8 @@ def ROR_RRI : PI32V2Inst32<(outs GPR:$r), (ins GPR:$s, Opuimm_5_1_0_32_F:$n), "$
   let Inst{2} = n{2};
   let Inst{1} = n{1};
   let Inst{0} = n{0};
+  let hasSideEffects = 0;
+  let Defs = [PSR];
 }
 def CYCC_RRI : PI32V2Inst32<(outs GPR:$r), (ins GPR:$s, Opuimm_5_1_0_32_F:$n), "${r} = ${s} <c> ${n}"> {
   bits<4> r;
@@ -5593,6 +5597,8 @@ def ROR_RRR : PI32V2Inst32<(outs GPR:$r), (ins GPR:$s, GPR:$t), "${r} = ${s} <> 
   let Inst{2} = 0;
   let Inst{1} = 0;
   let Inst{0} = 0;
+  let hasSideEffects = 0;
+  let Defs = [PSR];
 }
 def CYCC_RRR : PI32V2Inst32<(outs GPR:$r), (ins GPR:$s, GPR:$t), "${r} = ${s} <c> ${t}"> {
   bits<4> r;
@@ -6803,6 +6809,8 @@ def REV8_RR : PI32V2Inst32<(outs GPR:$r), (ins GPR:$s), "${r} = rev8(${s})"> {
   let Inst{2} = 0;
   let Inst{1} = 0;
   let Inst{0} = 0;
+  let hasSideEffects = 0;
+  let Defs = [PSR];
 }
 def REV16_RR : PI32V2Inst32<(outs GPR:$r), (ins GPR:$s), "${r} = rev16(${s})"> {
   bits<4> r;
@@ -6948,6 +6956,8 @@ def CLZ_RR : PI32V2Inst32<(outs GPR:$r), (ins GPR:$s), "${r} = clz(${s})"> {
   let Inst{2} = 0;
   let Inst{1} = 0;
   let Inst{0} = 0;
+  let hasSideEffects = 0;
+  let Defs = [PSR];
 }
 def CLS_RR : PI32V2Inst32<(outs GPR:$r), (ins GPR:$s), "${r} = cls(${s})"> {
   bits<4> r;
@@ -7209,6 +7219,8 @@ def UEXTRA_RRII : PI32V2Inst32<(outs GPR:$r), (ins GPR:$s, Opuimm_5_1_0_N_F:$n, 
   let Inst{2} = m{0};
   let Inst{1} = 0;
   let Inst{0} = 0;
+  let hasSideEffects = 0;
+  let Defs = [PSR];
 }
 def SEXTRA_RRII : PI32V2Inst32<(outs GPR:$r), (ins GPR:$s, Opuimm_5_1_0_N_F:$n, Opuimm_5_1_0_N_F:$m), "${r} = sextra(${s}, p:${n}, l:${m})"> {
   bits<4> r;
@@ -7247,6 +7259,8 @@ def SEXTRA_RRII : PI32V2Inst32<(outs GPR:$r), (ins GPR:$s, Opuimm_5_1_0_N_F:$n, 
   let Inst{2} = m{0};
   let Inst{1} = 0;
   let Inst{0} = 1;
+  let hasSideEffects = 0;
+  let Defs = [PSR];
 }
 def MUL_U_PRR : PI32V2Inst32<(outs GPRPair:$r), (ins GPR:$s, GPR:$t), "${r} = ${s} * ${t} (u)"> {
   bits<3> r;
