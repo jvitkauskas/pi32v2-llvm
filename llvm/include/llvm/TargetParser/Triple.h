@@ -95,6 +95,7 @@ public:
     x86_64,         // X86-64: amd64, x86_64
     xcore,          // XCore: xcore
     xtensa,         // Tensilica: Xtensa
+    pi32v2,         // JieLi pi32v2 (AC79 series)
     nvptx,          // NVPTX: 32-bit
     nvptx64,        // NVPTX: 64-bit
     amdil,          // AMDIL

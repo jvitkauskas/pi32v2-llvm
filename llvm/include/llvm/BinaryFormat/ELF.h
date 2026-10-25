@@ -320,6 +320,7 @@ enum {
   EM_CSR_KALIMBA = 219,   // CSR Kalimba architecture family
   EM_AMDGPU = 224,        // AMD GPU architecture
   EM_RISCV = 243,         // RISC-V
+  EM_PI32V2 = 241,        // JieLi pi32v2 (number used by JieLi's tools)
   EM_LANAI = 244,         // Lanai 32-bit processor
   EM_BPF = 247,           // Linux kernel bpf virtual machine
   EM_VE = 251,            // NEC SX-Aurora VE
@@ -700,6 +701,11 @@ enum {
 // ELF Relocation types for Hexagon
 enum {
 #include "ELFRelocs/Hexagon.def"
+};
+
+// ELF Relocation types for PI32V2.
+enum {
+#include "ELFRelocs/PI32V2.def"
 };
 
 // ELF Relocation type for Lanai.

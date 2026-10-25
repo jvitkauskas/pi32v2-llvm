@@ -273,6 +273,7 @@ void ScalarEnumerationTraits<ELFYAML::ELF_EM>::enumeration(
   ECase(EM_OPENRISC);
   ECase(EM_ARC_COMPACT);
   ECase(EM_XTENSA);
+  ECase(EM_PI32V2);
   ECase(EM_VIDEOCORE);
   ECase(EM_TMM_GPP);
   ECase(EM_NS32K);
@@ -922,6 +923,9 @@ void ScalarEnumerationTraits<ELFYAML::ELF_REL>::enumeration(
     break;
   case ELF::EM_XTENSA:
 #include "llvm/BinaryFormat/ELFRelocs/Xtensa.def"
+    break;
+  case ELF::EM_PI32V2:
+#include "llvm/BinaryFormat/ELFRelocs/PI32V2.def"
     break;
   default:
     // Nothing to do.
