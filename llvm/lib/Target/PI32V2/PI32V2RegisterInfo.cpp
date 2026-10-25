@@ -15,6 +15,7 @@
 #include "llvm/CodeGen/MachineInstrBuilder.h"
 #include "llvm/CodeGen/MachineRegisterInfo.h"
 #include "llvm/CodeGen/RegisterScavenging.h"
+#include <algorithm>
 #include "llvm/Support/ErrorHandling.h"
 
 #define GET_REGINFO_TARGET_DESC
@@ -101,18 +102,26 @@ bool PI32V2RegisterInfo::eliminateFrameIndex(MachineBasicBlock::iterator II,
 
   // The address of the slot in a register: r = sp + n, or the frame base.
   auto Address = [&](Register Dst) {
-    if (FP) {
-      BuildMI(MBB, II, DL, TII.get(PI32V2::ADD_S14_RRI), Dst)
-          .addReg(PI32V2::R7)
-          .addImm(Offset);
+    if (!FP && Offset >= 0 && Offset <= 4095) {
+      BuildMI(MBB, II, DL, TII.get(PI32V2::ADD_R_SP_I_L), Dst).addImm(Offset);
       return;
     }
-    if (Offset < 0 || Offset > 4095)
-      report_fatal_error(Twine("PI32V2: stack slot ") + Twine(FI) + " at sp+" +
-                         Twine(Offset) + " (object offset " +
-                         Twine(MFI.getObjectOffset(FI)) + ", frame " +
-                         Twine(MFI.getStackSize()) + "): out of reach");
-    BuildMI(MBB, II, DL, TII.get(PI32V2::ADD_R_SP_I_L), Dst).addImm(Offset);
+    // r = r7 + n, or further than r = sp + n reaches: r = sp; then as many
+    // r = r + n as the offset needs.
+    Register Base = PI32V2::R7;
+    if (!FP) {
+      BuildMI(MBB, II, DL, TII.get(PI32V2::MOV_R_SR), Dst).addReg(PI32V2::SP);
+      Base = Dst;
+    }
+    int64_t Left = Offset;
+    do {
+      int64_t Step = std::clamp<int64_t>(Left, -8192, 8188);
+      BuildMI(MBB, II, DL, TII.get(PI32V2::ADD_S14_RRI), Dst)
+          .addReg(Base, getKillRegState(Base == Dst))
+          .addImm(Step);
+      Base = Dst;
+      Left -= Step;
+    } while (Left);
   };
 
   if (Opc == PI32V2::ADDR_FI) {
@@ -139,8 +148,12 @@ bool PI32V2RegisterInfo::eliminateFrameIndex(MachineBasicBlock::iterator II,
       MI.eraseFromParent();
       return true;
     }
-    Register Tmp = RS->scavengeRegisterBackwards(PI32V2::GPRRegClass, II,
-                                                 false, 0);
+    // A load computes the address in its own destination; a store needs a
+    // free register (the emergency slot of processFunctionBeforeFrameFinalized
+    // makes sure there is one).
+    Register Tmp = F.Store ? RS->scavengeRegisterBackwards(PI32V2::GPRRegClass,
+                                                           II, false, 0)
+                           : Val;
     Address(Tmp);
     if (F.Store)
       BuildMI(MBB, II, DL, TII.get(F.RegOp))
@@ -150,7 +163,7 @@ bool PI32V2RegisterInfo::eliminateFrameIndex(MachineBasicBlock::iterator II,
           .setMemRefs(MI.memoperands());
     else
       BuildMI(MBB, II, DL, TII.get(F.RegOp), Val)
-          .addReg(Tmp, RegState::Kill)
+          .addReg(Tmp, getKillRegState(Tmp != Val))
           .addImm(0)
           .setMemRefs(MI.memoperands());
     MI.eraseFromParent();

@@ -12,6 +12,7 @@
 #include "PI32V2SelectionDAGInfo.h"
 #include "llvm/CodeGen/SelectionDAG.h"
 #include "llvm/CodeGen/TargetLowering.h"
+#include "llvm/IR/Instructions.h"
 
 namespace llvm {
 class PI32V2Subtarget;
@@ -20,6 +21,22 @@ class PI32V2TargetLowering : public TargetLowering {
   const PI32V2Subtarget &Subtarget;
 
 public:
+  // A register pair (an i64 node of the pair multiply) counts as two general
+  // registers for the scheduler's register pressure.
+  std::pair<const TargetRegisterClass *, uint8_t>
+  findRepresentativeClass(const TargetRegisterInfo *TRI,
+                          MVT VT) const override;
+  // Tail calls (LowerCall): library calls too, when their result is what the
+  // function returns.
+  bool mayBeEmittedAsTailCall(const CallInst *CI) const override {
+    return CI->isTailCall();
+  }
+  bool isUsedByReturnOnly(SDNode *N, SDValue &Chain) const override;
+  // A float constant is an integer constant (li).
+  bool isFPImmLegal(const APFloat &Imm, EVT VT,
+                    bool ForCodeSize) const override {
+    return VT == MVT::f32;
+  }
   PI32V2TargetLowering(const TargetMachine &TM, const PI32V2Subtarget &STI);
 
   SDValue LowerOperation(SDValue Op, SelectionDAG &DAG) const override;

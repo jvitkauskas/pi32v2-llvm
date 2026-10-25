@@ -53,7 +53,8 @@ def SSP   : PI32V2Reg<13, "ssp">;
 def SP    : PI32V2Reg<14, "sp">, DwarfRegNum<[16]>;
 def PC    : PI32V2Reg<15, "pc">;
 
-def GPR : RegisterClass<"PI32V2", [i32], 32, (sequence "R%u", 0, 15)>;
+// f32 values live in the general registers too (the (f) forms work on them).
+def GPR : RegisterClass<"PI32V2", [i32, f32], 32, (sequence "R%u", 0, 15)>;
 def GPRLo : RegisterClass<"PI32V2", [i32], 32, (sequence "R%u", 0, 7)>;
 def GPRHi : RegisterClass<"PI32V2", [i32], 32, (sequence "R%u", 8, 15)>;
 def GPRPair : RegisterClass<"PI32V2", [i64], 64,

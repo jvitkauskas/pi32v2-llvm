@@ -2198,6 +2198,8 @@ def MOV_PAIR : PI32V2Inst16<(outs GPRPair:$d), (ins GPRPair:$s), "${d} = ${s}"> 
   let Inst{2} = d{1};
   let Inst{1} = d{0};
   let Inst{0} = 0;
+  let hasSideEffects = 0;
+  let isMoveReg = 1;
 }
 def LI_ZERO_PAIR : PI32V2Inst16<(outs GPRPair:$p), (ins ), "${p} = 0"> {
   bits<3> p;
@@ -13937,7 +13939,9 @@ def BFEQ_RR : PI32V2Inst32<(outs ), (ins GPR:$r, GPR:$s, Optarget_9_2_goto:$n), 
   let Inst{2} = n{2};
   let Inst{1} = n{1};
   let Inst{0} = n{0};
+  let hasSideEffects = 0;
   let isBranch = 1;
+  let isTerminator = 1;
 }
 def IF_EQ_RR : PI32V2Inst32<(outs ), (ins GPR:$r, GPR:$s, Opuimm_2_1_1_N_F:$t, Opuimm_2_1_0_N_F:$e), "if (${r} == ${s}) \\{"> {
   bits<4> r;
@@ -14335,7 +14339,9 @@ def BFUNE_RR : PI32V2Inst32<(outs ), (ins GPR:$r, GPR:$s, Optarget_9_2_goto:$n),
   let Inst{2} = n{2};
   let Inst{1} = n{1};
   let Inst{0} = n{0};
+  let hasSideEffects = 0;
   let isBranch = 1;
+  let isTerminator = 1;
 }
 def IF_NE_RR : PI32V2Inst32<(outs ), (ins GPR:$r, GPR:$s, Opuimm_2_1_1_N_F:$t, Opuimm_2_1_0_N_F:$e), "if (${r} != ${s}) \\{"> {
   bits<4> r;
@@ -14585,7 +14591,9 @@ def BFUGE_RR : PI32V2Inst32<(outs ), (ins GPR:$r, GPR:$s, Optarget_9_2_goto:$n),
   let Inst{2} = n{2};
   let Inst{1} = n{1};
   let Inst{0} = n{0};
+  let hasSideEffects = 0;
   let isBranch = 1;
+  let isTerminator = 1;
 }
 def IF_GE_RR : PI32V2Inst32<(outs ), (ins GPR:$r, GPR:$s, Opuimm_2_1_1_N_F:$t, Opuimm_2_1_0_N_F:$e), "if (${r} >= ${s}) \\{"> {
   bits<4> r;
@@ -14835,7 +14843,9 @@ def BFLT_RR : PI32V2Inst32<(outs ), (ins GPR:$r, GPR:$s, Optarget_9_2_goto:$n), 
   let Inst{2} = n{2};
   let Inst{1} = n{1};
   let Inst{0} = n{0};
+  let hasSideEffects = 0;
   let isBranch = 1;
+  let isTerminator = 1;
 }
 def IF_LT_RR : PI32V2Inst32<(outs ), (ins GPR:$r, GPR:$s, Opuimm_2_1_1_N_F:$t, Opuimm_2_1_0_N_F:$e), "if (${r} < ${s}) \\{"> {
   bits<4> r;
@@ -15487,7 +15497,9 @@ def BFUGT_RR : PI32V2Inst32<(outs ), (ins GPR:$r, GPR:$s, Optarget_9_2_goto:$n),
   let Inst{2} = n{2};
   let Inst{1} = n{1};
   let Inst{0} = n{0};
+  let hasSideEffects = 0;
   let isBranch = 1;
+  let isTerminator = 1;
 }
 def IF_GT_RR : PI32V2Inst32<(outs ), (ins GPR:$r, GPR:$s, Opuimm_2_1_1_N_F:$t, Opuimm_2_1_0_N_F:$e), "if (${r} > ${s}) \\{"> {
   bits<4> r;
@@ -15737,7 +15749,9 @@ def BFLE_RR : PI32V2Inst32<(outs ), (ins GPR:$r, GPR:$s, Optarget_9_2_goto:$n), 
   let Inst{2} = n{2};
   let Inst{1} = n{1};
   let Inst{0} = n{0};
+  let hasSideEffects = 0;
   let isBranch = 1;
+  let isTerminator = 1;
 }
 def IF_LE_RR : PI32V2Inst32<(outs ), (ins GPR:$r, GPR:$s, Opuimm_2_1_1_N_F:$t, Opuimm_2_1_0_N_F:$e), "if (${r} <= ${s}) \\{"> {
   bits<4> r;
@@ -15987,7 +16001,9 @@ def BFGE_RR : PI32V2Inst32<(outs ), (ins GPR:$r, GPR:$s, Optarget_9_2_goto:$n), 
   let Inst{2} = n{2};
   let Inst{1} = n{1};
   let Inst{0} = n{0};
+  let hasSideEffects = 0;
   let isBranch = 1;
+  let isTerminator = 1;
 }
 def IFS_GE_RR : PI32V2Inst32<(outs ), (ins GPR:$r, GPR:$s, Opuimm_2_1_1_N_F:$t, Opuimm_2_1_0_N_F:$e), "ifs (${r} >= ${s}) \\{"> {
   bits<4> r;
@@ -16237,7 +16253,9 @@ def BFULT_RR : PI32V2Inst32<(outs ), (ins GPR:$r, GPR:$s, Optarget_9_2_goto:$n),
   let Inst{2} = n{2};
   let Inst{1} = n{1};
   let Inst{0} = n{0};
+  let hasSideEffects = 0;
   let isBranch = 1;
+  let isTerminator = 1;
 }
 def IFS_LT_RR : PI32V2Inst32<(outs ), (ins GPR:$r, GPR:$s, Opuimm_2_1_1_N_F:$t, Opuimm_2_1_0_N_F:$e), "ifs (${r} < ${s}) \\{"> {
   bits<4> r;
@@ -16487,7 +16505,9 @@ def BFGT_RR : PI32V2Inst32<(outs ), (ins GPR:$r, GPR:$s, Optarget_9_2_goto:$n), 
   let Inst{2} = n{2};
   let Inst{1} = n{1};
   let Inst{0} = n{0};
+  let hasSideEffects = 0;
   let isBranch = 1;
+  let isTerminator = 1;
 }
 def IFS_GT_RR : PI32V2Inst32<(outs ), (ins GPR:$r, GPR:$s, Opuimm_2_1_1_N_F:$t, Opuimm_2_1_0_N_F:$e), "ifs (${r} > ${s}) \\{"> {
   bits<4> r;
@@ -16737,7 +16757,9 @@ def BFULE_RR : PI32V2Inst32<(outs ), (ins GPR:$r, GPR:$s, Optarget_9_2_goto:$n),
   let Inst{2} = n{2};
   let Inst{1} = n{1};
   let Inst{0} = n{0};
+  let hasSideEffects = 0;
   let isBranch = 1;
+  let isTerminator = 1;
 }
 def IFS_LE_RR : PI32V2Inst32<(outs ), (ins GPR:$r, GPR:$s, Opuimm_2_1_1_N_F:$t, Opuimm_2_1_0_N_F:$e), "ifs (${r} <= ${s}) \\{"> {
   bits<4> r;
@@ -17017,6 +17039,7 @@ def FTOI_TRUNC_RR : PI32V2Inst32<(outs GPR:$r), (ins GPR:$s), "${r} = ftoi(${s})
   let Inst{2} = 1;
   let Inst{1} = 1;
   let Inst{0} = 1;
+  let hasSideEffects = 0;
 }
 def FTOI_CEIL_RR : PI32V2Inst32<(outs GPR:$r), (ins GPR:$s), "${r} = ftoi(${s}) (ceil)"> {
   bits<4> r;
@@ -17161,6 +17184,7 @@ def FTOU_TRUNC_RR : PI32V2Inst32<(outs GPR:$r), (ins GPR:$s), "${r} = ftou(${s})
   let Inst{2} = 1;
   let Inst{1} = 1;
   let Inst{0} = 1;
+  let hasSideEffects = 0;
 }
 def FTOU_CEIL_RR : PI32V2Inst32<(outs GPR:$r), (ins GPR:$s), "${r} = ftou(${s}) (ceil)"> {
   bits<4> r;
@@ -17269,6 +17293,7 @@ def ITOF_RR : PI32V2Inst32<(outs GPR:$r), (ins GPR:$s), "${r} = itof(${s})"> {
   let Inst{2} = 1;
   let Inst{1} = 1;
   let Inst{0} = 1;
+  let hasSideEffects = 0;
 }
 def UTOF_RR : PI32V2Inst32<(outs GPR:$r), (ins GPR:$s), "${r} = utof(${s})"> {
   bits<4> r;
@@ -17305,6 +17330,7 @@ def UTOF_RR : PI32V2Inst32<(outs GPR:$r), (ins GPR:$s), "${r} = utof(${s})"> {
   let Inst{2} = 1;
   let Inst{1} = 1;
   let Inst{0} = 1;
+  let hasSideEffects = 0;
 }
 def FTOF_HALF_RR : PI32V2Inst32<(outs ), (ins GPR:$r, GPR:$s), "${r}.l = ftof(${s})"> {
   bits<4> r;
@@ -17558,6 +17584,7 @@ def ADD_F_RRR : PI32V2Inst32<(outs GPR:$r), (ins GPR:$s, GPR:$t), "${r} = ${s} +
   let Inst{2} = 0;
   let Inst{1} = 0;
   let Inst{0} = 0;
+  let hasSideEffects = 0;
 }
 def SUB_F_RRR : PI32V2Inst32<(outs GPR:$r), (ins GPR:$s, GPR:$t), "${r} = ${s} - ${t} (f)"> {
   bits<4> r;
@@ -17595,6 +17622,7 @@ def SUB_F_RRR : PI32V2Inst32<(outs GPR:$r), (ins GPR:$s, GPR:$t), "${r} = ${s} -
   let Inst{2} = 0;
   let Inst{1} = 0;
   let Inst{0} = 1;
+  let hasSideEffects = 0;
 }
 def MUL_F_RRR : PI32V2Inst32<(outs GPR:$r), (ins GPR:$s, GPR:$t), "${r} = ${s} * ${t} (f)"> {
   bits<4> r;
@@ -17632,6 +17660,7 @@ def MUL_F_RRR : PI32V2Inst32<(outs GPR:$r), (ins GPR:$s, GPR:$t), "${r} = ${s} *
   let Inst{2} = 0;
   let Inst{1} = 1;
   let Inst{0} = 0;
+  let hasSideEffects = 0;
 }
 def DIV_F_RRR : PI32V2Inst32<(outs GPR:$r), (ins GPR:$s, GPR:$t), "${r} = ${s} / ${t} (f)"> {
   bits<4> r;
@@ -17669,6 +17698,7 @@ def DIV_F_RRR : PI32V2Inst32<(outs GPR:$r), (ins GPR:$s, GPR:$t), "${r} = ${s} /
   let Inst{2} = 0;
   let Inst{1} = 1;
   let Inst{0} = 1;
+  let hasSideEffects = 0;
 }
 def FMIN_RRR : PI32V2Inst32<(outs GPR:$r), (ins GPR:$s, GPR:$t), "${r} = fmin(${s}, ${t})"> {
   bits<4> r;
@@ -81014,7 +81044,9 @@ def BEQ_RI : PI32V2Inst32<(outs ), (ins GPR:$r, Opsimm_10_1_0_N_F:$i, Optarget_9
   let Inst{2} = n{2};
   let Inst{1} = n{1};
   let Inst{0} = n{0};
+  let hasSideEffects = 0;
   let isBranch = 1;
+  let isTerminator = 1;
 }
 def BNE_RI : PI32V2Inst32<(outs ), (ins GPR:$r, Opsimm_10_1_0_N_F:$i, Optarget_9_2_goto:$n), "if (${r} != ${i}) goto ${n}"> {
   bits<4> r;
@@ -81052,7 +81084,9 @@ def BNE_RI : PI32V2Inst32<(outs ), (ins GPR:$r, Opsimm_10_1_0_N_F:$i, Optarget_9
   let Inst{2} = n{2};
   let Inst{1} = n{1};
   let Inst{0} = n{0};
+  let hasSideEffects = 0;
   let isBranch = 1;
+  let isTerminator = 1;
 }
 def BGE_RI : PI32V2Inst32<(outs ), (ins GPR:$r, Opuimm_10_1_0_N_F:$i, Optarget_9_2_goto:$n), "if (${r} >= ${i}) goto ${n}"> {
   bits<4> r;
@@ -81090,7 +81124,9 @@ def BGE_RI : PI32V2Inst32<(outs ), (ins GPR:$r, Opuimm_10_1_0_N_F:$i, Optarget_9
   let Inst{2} = n{2};
   let Inst{1} = n{1};
   let Inst{0} = n{0};
+  let hasSideEffects = 0;
   let isBranch = 1;
+  let isTerminator = 1;
 }
 def BLT_RI : PI32V2Inst32<(outs ), (ins GPR:$r, Opuimm_10_1_0_N_F:$i, Optarget_9_2_goto:$n), "if (${r} < ${i}) goto ${n}"> {
   bits<4> r;
@@ -81128,7 +81164,9 @@ def BLT_RI : PI32V2Inst32<(outs ), (ins GPR:$r, Opuimm_10_1_0_N_F:$i, Optarget_9
   let Inst{2} = n{2};
   let Inst{1} = n{1};
   let Inst{0} = n{0};
+  let hasSideEffects = 0;
   let isBranch = 1;
+  let isTerminator = 1;
 }
 def BGT_RI : PI32V2Inst32<(outs ), (ins GPR:$r, Opuimm_10_1_0_N_F:$i, Optarget_9_2_goto:$n), "if (${r} > ${i}) goto ${n}"> {
   bits<4> r;
@@ -81166,7 +81204,9 @@ def BGT_RI : PI32V2Inst32<(outs ), (ins GPR:$r, Opuimm_10_1_0_N_F:$i, Optarget_9
   let Inst{2} = n{2};
   let Inst{1} = n{1};
   let Inst{0} = n{0};
+  let hasSideEffects = 0;
   let isBranch = 1;
+  let isTerminator = 1;
 }
 def BLE_RI : PI32V2Inst32<(outs ), (ins GPR:$r, Opuimm_10_1_0_N_F:$i, Optarget_9_2_goto:$n), "if (${r} <= ${i}) goto ${n}"> {
   bits<4> r;
@@ -81204,7 +81244,9 @@ def BLE_RI : PI32V2Inst32<(outs ), (ins GPR:$r, Opuimm_10_1_0_N_F:$i, Optarget_9
   let Inst{2} = n{2};
   let Inst{1} = n{1};
   let Inst{0} = n{0};
+  let hasSideEffects = 0;
   let isBranch = 1;
+  let isTerminator = 1;
 }
 def BGES_RI : PI32V2Inst32<(outs ), (ins GPR:$r, Opsimm_10_1_0_N_F:$i, Optarget_9_2_goto:$n), "ifs (${r} >= ${i}) goto ${n}"> {
   bits<4> r;
@@ -81242,7 +81284,9 @@ def BGES_RI : PI32V2Inst32<(outs ), (ins GPR:$r, Opsimm_10_1_0_N_F:$i, Optarget_
   let Inst{2} = n{2};
   let Inst{1} = n{1};
   let Inst{0} = n{0};
+  let hasSideEffects = 0;
   let isBranch = 1;
+  let isTerminator = 1;
 }
 def BLTS_RI : PI32V2Inst32<(outs ), (ins GPR:$r, Opsimm_10_1_0_N_F:$i, Optarget_9_2_goto:$n), "ifs (${r} < ${i}) goto ${n}"> {
   bits<4> r;
@@ -81280,7 +81324,9 @@ def BLTS_RI : PI32V2Inst32<(outs ), (ins GPR:$r, Opsimm_10_1_0_N_F:$i, Optarget_
   let Inst{2} = n{2};
   let Inst{1} = n{1};
   let Inst{0} = n{0};
+  let hasSideEffects = 0;
   let isBranch = 1;
+  let isTerminator = 1;
 }
 def BGTS_RI : PI32V2Inst32<(outs ), (ins GPR:$r, Opsimm_10_1_0_N_F:$i, Optarget_9_2_goto:$n), "ifs (${r} > ${i}) goto ${n}"> {
   bits<4> r;
@@ -81318,7 +81364,9 @@ def BGTS_RI : PI32V2Inst32<(outs ), (ins GPR:$r, Opsimm_10_1_0_N_F:$i, Optarget_
   let Inst{2} = n{2};
   let Inst{1} = n{1};
   let Inst{0} = n{0};
+  let hasSideEffects = 0;
   let isBranch = 1;
+  let isTerminator = 1;
 }
 def BLES_RI : PI32V2Inst32<(outs ), (ins GPR:$r, Opsimm_10_1_0_N_F:$i, Optarget_9_2_goto:$n), "ifs (${r} <= ${i}) goto ${n}"> {
   bits<4> r;
@@ -81356,7 +81404,9 @@ def BLES_RI : PI32V2Inst32<(outs ), (ins GPR:$r, Opsimm_10_1_0_N_F:$i, Optarget_
   let Inst{2} = n{2};
   let Inst{1} = n{1};
   let Inst{0} = n{0};
+  let hasSideEffects = 0;
   let isBranch = 1;
+  let isTerminator = 1;
 }
 def BEQ_AND_RR : PI32V2Inst32<(outs ), (ins GPR:$r, GPR:$s, Optarget_16_2_goto:$n), "if ((${r} & ${s}) == 0) goto ${n}"> {
   bits<4> r;
@@ -81486,7 +81536,9 @@ def BEQ_RI_L : PI32V2Inst48<(outs ), (ins GPR:$r, Opsimm_12_1_0_N_F:$i, Optarget
   let Inst{2} = n{2};
   let Inst{1} = n{1};
   let Inst{0} = n{0};
+  let hasSideEffects = 0;
   let isBranch = 1;
+  let isTerminator = 1;
 }
 def BEQ_RI_L_MODIMM : PI32V2Inst48<(outs ), (ins GPR:$r, Opmodimm_F_T_F:$i, Optarget_16_2_goto:$n), "if (${r} == ${i}) goto ${n}"> {
   bits<4> r;
@@ -81594,7 +81646,9 @@ def BNE_RI_L : PI32V2Inst48<(outs ), (ins GPR:$r, Opsimm_12_1_0_N_F:$i, Optarget
   let Inst{2} = n{2};
   let Inst{1} = n{1};
   let Inst{0} = n{0};
+  let hasSideEffects = 0;
   let isBranch = 1;
+  let isTerminator = 1;
 }
 def BNE_RI_L_MODIMM : PI32V2Inst48<(outs ), (ins GPR:$r, Opmodimm_F_T_F:$i, Optarget_16_2_goto:$n), "if (${r} != ${i}) goto ${n}"> {
   bits<4> r;
@@ -81702,7 +81756,9 @@ def BGE_RI_L : PI32V2Inst48<(outs ), (ins GPR:$r, Opuimm_12_1_0_N_F:$i, Optarget
   let Inst{2} = n{2};
   let Inst{1} = n{1};
   let Inst{0} = n{0};
+  let hasSideEffects = 0;
   let isBranch = 1;
+  let isTerminator = 1;
 }
 def BGE_RI_L_MODIMM : PI32V2Inst48<(outs ), (ins GPR:$r, Opmodimm_F_T_F:$i, Optarget_16_2_goto:$n), "if (${r} >= ${i}) goto ${n}"> {
   bits<4> r;
@@ -81810,7 +81866,9 @@ def BLT_RI_L : PI32V2Inst48<(outs ), (ins GPR:$r, Opuimm_12_1_0_N_F:$i, Optarget
   let Inst{2} = n{2};
   let Inst{1} = n{1};
   let Inst{0} = n{0};
+  let hasSideEffects = 0;
   let isBranch = 1;
+  let isTerminator = 1;
 }
 def BLT_RI_L_MODIMM : PI32V2Inst48<(outs ), (ins GPR:$r, Opmodimm_F_T_F:$i, Optarget_16_2_goto:$n), "if (${r} < ${i}) goto ${n}"> {
   bits<4> r;
@@ -81918,7 +81976,9 @@ def BGT_RI_L : PI32V2Inst48<(outs ), (ins GPR:$r, Opuimm_12_1_0_N_F:$i, Optarget
   let Inst{2} = n{2};
   let Inst{1} = n{1};
   let Inst{0} = n{0};
+  let hasSideEffects = 0;
   let isBranch = 1;
+  let isTerminator = 1;
 }
 def BGT_RI_L_MODIMM : PI32V2Inst48<(outs ), (ins GPR:$r, Opmodimm_F_T_F:$i, Optarget_16_2_goto:$n), "if (${r} > ${i}) goto ${n}"> {
   bits<4> r;
@@ -82026,7 +82086,9 @@ def BLE_RI_L : PI32V2Inst48<(outs ), (ins GPR:$r, Opuimm_12_1_0_N_F:$i, Optarget
   let Inst{2} = n{2};
   let Inst{1} = n{1};
   let Inst{0} = n{0};
+  let hasSideEffects = 0;
   let isBranch = 1;
+  let isTerminator = 1;
 }
 def BLE_RI_L_MODIMM : PI32V2Inst48<(outs ), (ins GPR:$r, Opmodimm_F_T_F:$i, Optarget_16_2_goto:$n), "if (${r} <= ${i}) goto ${n}"> {
   bits<4> r;
@@ -82134,7 +82196,9 @@ def BGES_RI_L : PI32V2Inst48<(outs ), (ins GPR:$r, Opsimm_12_1_0_N_F:$i, Optarge
   let Inst{2} = n{2};
   let Inst{1} = n{1};
   let Inst{0} = n{0};
+  let hasSideEffects = 0;
   let isBranch = 1;
+  let isTerminator = 1;
 }
 def BGES_RI_L_MODIMM : PI32V2Inst48<(outs ), (ins GPR:$r, Opmodimm_F_T_F:$i, Optarget_16_2_goto:$n), "ifs (${r} >= ${i}) goto ${n}"> {
   bits<4> r;
@@ -82242,7 +82306,9 @@ def BLTS_RI_L : PI32V2Inst48<(outs ), (ins GPR:$r, Opsimm_12_1_0_N_F:$i, Optarge
   let Inst{2} = n{2};
   let Inst{1} = n{1};
   let Inst{0} = n{0};
+  let hasSideEffects = 0;
   let isBranch = 1;
+  let isTerminator = 1;
 }
 def BLTS_RI_L_MODIMM : PI32V2Inst48<(outs ), (ins GPR:$r, Opmodimm_F_T_F:$i, Optarget_16_2_goto:$n), "ifs (${r} < ${i}) goto ${n}"> {
   bits<4> r;
@@ -82350,7 +82416,9 @@ def BGTS_RI_L : PI32V2Inst48<(outs ), (ins GPR:$r, Opsimm_12_1_0_N_F:$i, Optarge
   let Inst{2} = n{2};
   let Inst{1} = n{1};
   let Inst{0} = n{0};
+  let hasSideEffects = 0;
   let isBranch = 1;
+  let isTerminator = 1;
 }
 def BGTS_RI_L_MODIMM : PI32V2Inst48<(outs ), (ins GPR:$r, Opmodimm_F_T_F:$i, Optarget_16_2_goto:$n), "ifs (${r} > ${i}) goto ${n}"> {
   bits<4> r;
@@ -82458,7 +82526,9 @@ def BLES_RI_L : PI32V2Inst48<(outs ), (ins GPR:$r, Opsimm_12_1_0_N_F:$i, Optarge
   let Inst{2} = n{2};
   let Inst{1} = n{1};
   let Inst{0} = n{0};
+  let hasSideEffects = 0;
   let isBranch = 1;
+  let isTerminator = 1;
 }
 def BLES_RI_L_MODIMM : PI32V2Inst48<(outs ), (ins GPR:$r, Opmodimm_F_T_F:$i, Optarget_16_2_goto:$n), "ifs (${r} <= ${i}) goto ${n}"> {
   bits<4> r;
@@ -83050,7 +83120,9 @@ def BFEQ_RR_L : PI32V2Inst48<(outs ), (ins GPR:$r, GPR:$s, Optarget_16_2_goto:$n
   let Inst{2} = n{2};
   let Inst{1} = n{1};
   let Inst{0} = n{0};
+  let hasSideEffects = 0;
   let isBranch = 1;
+  let isTerminator = 1;
 }
 def BFUNE_RR_L : PI32V2Inst48<(outs ), (ins GPR:$r, GPR:$s, Optarget_16_2_goto:$n), "iff (${r} u!= ${s}) goto ${n}"> {
   bits<4> r;
@@ -83098,7 +83170,9 @@ def BFUNE_RR_L : PI32V2Inst48<(outs ), (ins GPR:$r, GPR:$s, Optarget_16_2_goto:$
   let Inst{2} = n{2};
   let Inst{1} = n{1};
   let Inst{0} = n{0};
+  let hasSideEffects = 0;
   let isBranch = 1;
+  let isTerminator = 1;
 }
 def BFUGE_RR_L : PI32V2Inst48<(outs ), (ins GPR:$r, GPR:$s, Optarget_16_2_goto:$n), "iff (${r} u>= ${s}) goto ${n}"> {
   bits<4> r;
@@ -83146,7 +83220,9 @@ def BFUGE_RR_L : PI32V2Inst48<(outs ), (ins GPR:$r, GPR:$s, Optarget_16_2_goto:$
   let Inst{2} = n{2};
   let Inst{1} = n{1};
   let Inst{0} = n{0};
+  let hasSideEffects = 0;
   let isBranch = 1;
+  let isTerminator = 1;
 }
 def BFLT_RR_L : PI32V2Inst48<(outs ), (ins GPR:$r, GPR:$s, Optarget_16_2_goto:$n), "iff (${r} < ${s}) goto ${n}"> {
   bits<4> r;
@@ -83194,7 +83270,9 @@ def BFLT_RR_L : PI32V2Inst48<(outs ), (ins GPR:$r, GPR:$s, Optarget_16_2_goto:$n
   let Inst{2} = n{2};
   let Inst{1} = n{1};
   let Inst{0} = n{0};
+  let hasSideEffects = 0;
   let isBranch = 1;
+  let isTerminator = 1;
 }
 def BFUGT_RR_L : PI32V2Inst48<(outs ), (ins GPR:$r, GPR:$s, Optarget_16_2_goto:$n), "iff (${r} u> ${s}) goto ${n}"> {
   bits<4> r;
@@ -83242,7 +83320,9 @@ def BFUGT_RR_L : PI32V2Inst48<(outs ), (ins GPR:$r, GPR:$s, Optarget_16_2_goto:$
   let Inst{2} = n{2};
   let Inst{1} = n{1};
   let Inst{0} = n{0};
+  let hasSideEffects = 0;
   let isBranch = 1;
+  let isTerminator = 1;
 }
 def BFLE_RR_L : PI32V2Inst48<(outs ), (ins GPR:$r, GPR:$s, Optarget_16_2_goto:$n), "iff (${r} <= ${s}) goto ${n}"> {
   bits<4> r;
@@ -83290,7 +83370,9 @@ def BFLE_RR_L : PI32V2Inst48<(outs ), (ins GPR:$r, GPR:$s, Optarget_16_2_goto:$n
   let Inst{2} = n{2};
   let Inst{1} = n{1};
   let Inst{0} = n{0};
+  let hasSideEffects = 0;
   let isBranch = 1;
+  let isTerminator = 1;
 }
 def BFGE_RR_L : PI32V2Inst48<(outs ), (ins GPR:$r, GPR:$s, Optarget_16_2_goto:$n), "iff (${r} >= ${s}) goto ${n}"> {
   bits<4> r;
@@ -83338,7 +83420,9 @@ def BFGE_RR_L : PI32V2Inst48<(outs ), (ins GPR:$r, GPR:$s, Optarget_16_2_goto:$n
   let Inst{2} = n{2};
   let Inst{1} = n{1};
   let Inst{0} = n{0};
+  let hasSideEffects = 0;
   let isBranch = 1;
+  let isTerminator = 1;
 }
 def BFULT_RR_L : PI32V2Inst48<(outs ), (ins GPR:$r, GPR:$s, Optarget_16_2_goto:$n), "iff (${r} u< ${s}) goto ${n}"> {
   bits<4> r;
@@ -83386,7 +83470,9 @@ def BFULT_RR_L : PI32V2Inst48<(outs ), (ins GPR:$r, GPR:$s, Optarget_16_2_goto:$
   let Inst{2} = n{2};
   let Inst{1} = n{1};
   let Inst{0} = n{0};
+  let hasSideEffects = 0;
   let isBranch = 1;
+  let isTerminator = 1;
 }
 def BFGT_RR_L : PI32V2Inst48<(outs ), (ins GPR:$r, GPR:$s, Optarget_16_2_goto:$n), "iff (${r} > ${s}) goto ${n}"> {
   bits<4> r;
@@ -83434,7 +83520,9 @@ def BFGT_RR_L : PI32V2Inst48<(outs ), (ins GPR:$r, GPR:$s, Optarget_16_2_goto:$n
   let Inst{2} = n{2};
   let Inst{1} = n{1};
   let Inst{0} = n{0};
+  let hasSideEffects = 0;
   let isBranch = 1;
+  let isTerminator = 1;
 }
 def BFULE_RR_L : PI32V2Inst48<(outs ), (ins GPR:$r, GPR:$s, Optarget_16_2_goto:$n), "iff (${r} u<= ${s}) goto ${n}"> {
   bits<4> r;
@@ -83482,7 +83570,9 @@ def BFULE_RR_L : PI32V2Inst48<(outs ), (ins GPR:$r, GPR:$s, Optarget_16_2_goto:$
   let Inst{2} = n{2};
   let Inst{1} = n{1};
   let Inst{0} = n{0};
+  let hasSideEffects = 0;
   let isBranch = 1;
+  let isTerminator = 1;
 }
 def ADD_F_RRR_P : PI32V2Inst32<(outs GPR:$d), (ins GPR:$a, GPR:$b), "${d} = ${a} + ${b} (f)  #"> {
   bits<4> d;

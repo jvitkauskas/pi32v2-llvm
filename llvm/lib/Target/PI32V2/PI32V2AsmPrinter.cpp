@@ -141,6 +141,9 @@ void PI32V2AsmPrinter::emitInstruction(const MachineInstr *MI) {
   case PI32V2::PseudoCALLR:
     Opc = PI32V2::CALL_R;
     break;
+  case PI32V2::PseudoTAIL:
+    Opc = PI32V2::GOTO_S;
+    break;
   case PI32V2::PseudoRET:
     // an interrupt handler returns to reti
     Inst.setOpcode(MF->getFunction().hasFnAttribute("interrupt") ? PI32V2::RTI
@@ -152,7 +155,8 @@ void PI32V2AsmPrinter::emitInstruction(const MachineInstr *MI) {
   }
   Inst.setOpcode(Opc);
   bool Call = MI->getOpcode() == PI32V2::PseudoCALL ||
-              MI->getOpcode() == PI32V2::PseudoCALLR;
+              MI->getOpcode() == PI32V2::PseudoCALLR ||
+              MI->getOpcode() == PI32V2::PseudoTAIL;
   for (const MachineOperand &MO : MI->operands()) {
     MCOperand Op;
     if (!lowerOperand(MO, Op))

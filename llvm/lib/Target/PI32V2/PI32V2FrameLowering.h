@@ -37,6 +37,12 @@ public:
   bool hasReservedCallFrame(const MachineFunction &MF) const override;
   void determineCalleeSaves(MachineFunction &MF, BitVector &SavedRegs,
                             RegScavenger *RS) const override;
+  void processFunctionBeforeFrameFinalized(MachineFunction &MF,
+                                           RegScavenger *RS) const override;
+  bool allocateScavengingFrameIndexesNearIncomingSP(
+      const MachineFunction &MF) const override {
+    return false;
+  }
 
 protected:
   bool hasFPImpl(const MachineFunction &MF) const override;

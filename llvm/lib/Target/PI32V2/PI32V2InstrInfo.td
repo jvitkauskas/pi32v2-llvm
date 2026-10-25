@@ -17,11 +17,14 @@ def SDT_PI32V2Call : SDTypeProfile<0, -1, [SDTCisVT<0, i32>]>;
 def SDT_PI32V2CallSeqStart : SDCallSeqStart<[SDTCisVT<0, i32>, SDTCisVT<1, i32>]>;
 def SDT_PI32V2CallSeqEnd : SDCallSeqEnd<[SDTCisVT<0, i32>, SDTCisVT<1, i32>]>;
 def SDT_PI32V2Wrapper : SDTypeProfile<1, 1, [SDTCisSameAs<0, 1>, SDTCisPtrTy<0>]>;
-def SDT_PI32V2SelectCC : SDTypeProfile<1, 5, [SDTCisSameAs<0, 1>, SDTCisSameAs<1, 2>,
+// dst = (a cc b) ? t : f: dst, t and f of one type, a and b of one type.
+def SDT_PI32V2SelectCC : SDTypeProfile<1, 5, [SDTCisSameAs<0, 3>, SDTCisSameAs<1, 2>,
                                               SDTCisSameAs<3, 4>, SDTCisVT<5, i32>]>;
 
 def PI32V2call : SDNode<"PI32V2ISD::CALL", SDT_PI32V2Call,
                         [SDNPHasChain, SDNPOutGlue, SDNPOptInGlue, SDNPVariadic]>;
+def PI32V2tail : SDNode<"PI32V2ISD::TAIL", SDT_PI32V2Call,
+                        [SDNPHasChain, SDNPOptInGlue, SDNPVariadic]>;
 def PI32V2ret : SDNode<"PI32V2ISD::RET", SDTNone,
                        [SDNPHasChain, SDNPOptInGlue, SDNPVariadic]>;
 def PI32V2wrapper : SDNode<"PI32V2ISD::WRAPPER", SDT_PI32V2Wrapper>;
@@ -57,10 +60,18 @@ def ADJCALLSTACKUP : PI32V2Pseudo<(outs), (ins i32imm_op:$amt1, i32imm_op:$amt2)
 let isCall = 1, Defs = [RETS], Uses = [SP], hasSideEffects = 1 in {
 def PseudoCALL : PI32V2Pseudo<(outs), (ins calltarget:$dst, variable_ops)>;
 def PseudoCALLR : PI32V2Pseudo<(outs), (ins GPR:$dst, variable_ops),
-                               [(PI32V2call GPR:$dst)]>;
+                               [(PI32V2call i32:$dst)]>;
 }
 def : Pat<(PI32V2call tglobaladdr:$dst), (PseudoCALL tglobaladdr:$dst)>;
 def : Pat<(PI32V2call texternalsym:$dst), (PseudoCALL texternalsym:$dst)>;
+
+// A tail call: goto (relaxed to the long form by the assembler backend), after
+// the epilogue (whose pop restores rets instead of returning).
+let isCall = 1, isTerminator = 1, isReturn = 1, isBarrier = 1, Uses = [SP],
+    hasSideEffects = 1 in
+def PseudoTAIL : PI32V2Pseudo<(outs), (ins calltarget:$dst, variable_ops)>;
+def : Pat<(PI32V2tail tglobaladdr:$dst), (PseudoTAIL tglobaladdr:$dst)>;
+def : Pat<(PI32V2tail texternalsym:$dst), (PseudoTAIL texternalsym:$dst)>;
 
 // return: rts, or the epilogue's {pc, ...} = [sp++].
 let isReturn = 1, isTerminator = 1, isBarrier = 1, Uses = [RETS] in
@@ -86,9 +97,13 @@ def ADDR_FI : PI32V2Pseudo<(outs GPR:$r), (ins i32imm_op:$fi, i32imm_op:$off)>;
 // select: a branch diamond (PI32V2TargetLowering::EmitInstrWithCustomInserter).
 let usesCustomInserter = 1 in
 def SELECT_CC : PI32V2Pseudo<(outs GPR:$dst),
-                             (ins GPR:$a, GPR:$b, GPR:$t, GPR:$f, i32imm_op:$cc),
-                             [(set GPR:$dst, (PI32V2selectcc GPR:$a, GPR:$b,
-                                                             GPR:$t, GPR:$f, imm:$cc))]>;
+                             (ins GPR:$a, GPR:$b, GPR:$t, GPR:$f, i32imm_op:$cc)>;
+// Integer or float values, compared as integers or floats.
+foreach V = [i32, f32] in
+foreach C = [i32, f32] in
+def : Pat<(V (PI32V2selectcc (C GPR:$a), (C GPR:$b), (V GPR:$t), (V GPR:$f),
+                             imm:$cc)),
+          (SELECT_CC GPR:$a, GPR:$b, GPR:$t, GPR:$f, imm:$cc)>;
 
 //===----------------------------------------------------------------------===//
 // Patterns
@@ -126,6 +141,12 @@ def : Pat<(srl GPR:$a, shamt:$n), (LSR_RRI_L GPR:$a, imm:$n)>;
 def : Pat<(sra GPR:$a, shamt:$n), (ASR_RRI_L GPR:$a, imm:$n)>;
 def : Pat<(mul GPR:$a, GPR:$b), (MUL_RRR GPR:$a, GPR:$b)>;
 def : Pat<(sdiv GPR:$a, GPR:$b), (DIV_S_RRR GPR:$a, GPR:$b)>;
+// The carry chain of a 64-bit add or subtract: psr's C, which every add and
+// subtract writes (C = no borrow for a subtract, subc subtracts !C).
+def : Pat<(addc i32:$a, i32:$b), (ADD_RRR_L GPR:$a, GPR:$b)>;
+def : Pat<(adde i32:$a, i32:$b), (ADDC_RRR GPR:$a, GPR:$b)>;
+def : Pat<(subc i32:$a, i32:$b), (SUB_RRR_L GPR:$a, GPR:$b)>;
+def : Pat<(sube i32:$a, i32:$b), (SUBC_RRR GPR:$a, GPR:$b)>;
 def : Pat<(udiv GPR:$a, GPR:$b), (DIV_U_RRR GPR:$a, GPR:$b)>;
 
 // Memory: base register plus offset (PI32V2DAGToDAGISel::selectAddr*), or a
@@ -142,27 +163,27 @@ def : Pat<(i32 (sextloadi8 (AddrFI i32:$fi, i32:$off))), (LDBS_FI $fi, $off)>;
 def : Pat<(i32 (zextloadi16 (AddrFI i32:$fi, i32:$off))), (LDHU_FI $fi, $off)>;
 def : Pat<(i32 (extloadi16 (AddrFI i32:$fi, i32:$off))), (LDHU_FI $fi, $off)>;
 def : Pat<(i32 (sextloadi16 (AddrFI i32:$fi, i32:$off))), (LDHS_FI $fi, $off)>;
-def : Pat<(store GPR:$v, (AddrFI i32:$fi, i32:$off)), (STW_FI GPR:$v, $fi, $off)>;
-def : Pat<(truncstorei8 GPR:$v, (AddrFI i32:$fi, i32:$off)), (STB_FI GPR:$v, $fi, $off)>;
-def : Pat<(truncstorei16 GPR:$v, (AddrFI i32:$fi, i32:$off)), (STH_FI GPR:$v, $fi, $off)>;
+def : Pat<(store (i32 GPR:$v), (AddrFI i32:$fi, i32:$off)), (STW_FI GPR:$v, $fi, $off)>;
+def : Pat<(truncstorei8 (i32 GPR:$v), (AddrFI i32:$fi, i32:$off)), (STB_FI GPR:$v, $fi, $off)>;
+def : Pat<(truncstorei16 (i32 GPR:$v), (AddrFI i32:$fi, i32:$off)), (STH_FI GPR:$v, $fi, $off)>;
 
-def : Pat<(i32 (load (AddrW GPR:$b, i32:$n))), (LD_W_L GPR:$b, $n)>;
-def : Pat<(i32 (zextloadi8 (AddrB GPR:$b, i32:$n))), (LD_BU_L GPR:$b, $n)>;
-def : Pat<(i32 (extloadi8 (AddrB GPR:$b, i32:$n))), (LD_BU_L GPR:$b, $n)>;
-def : Pat<(i32 (sextloadi8 (AddrB GPR:$b, i32:$n))), (LD_BS_L GPR:$b, $n)>;
-def : Pat<(i32 (zextloadi16 (AddrH GPR:$b, i32:$n))), (LD_HU_L GPR:$b, $n)>;
-def : Pat<(i32 (extloadi16 (AddrH GPR:$b, i32:$n))), (LD_HU_L GPR:$b, $n)>;
-def : Pat<(i32 (sextloadi16 (AddrH GPR:$b, i32:$n))), (LD_HS_L GPR:$b, $n)>;
+def : Pat<(i32 (load (AddrW i32:$b, i32:$n))), (LD_W_L GPR:$b, $n)>;
+def : Pat<(i32 (zextloadi8 (AddrB i32:$b, i32:$n))), (LD_BU_L GPR:$b, $n)>;
+def : Pat<(i32 (extloadi8 (AddrB i32:$b, i32:$n))), (LD_BU_L GPR:$b, $n)>;
+def : Pat<(i32 (sextloadi8 (AddrB i32:$b, i32:$n))), (LD_BS_L GPR:$b, $n)>;
+def : Pat<(i32 (zextloadi16 (AddrH i32:$b, i32:$n))), (LD_HU_L GPR:$b, $n)>;
+def : Pat<(i32 (extloadi16 (AddrH i32:$b, i32:$n))), (LD_HU_L GPR:$b, $n)>;
+def : Pat<(i32 (sextloadi16 (AddrH i32:$b, i32:$n))), (LD_HS_L GPR:$b, $n)>;
 // The store forms take the base first and the value last.
-def : Pat<(store GPR:$v, (AddrW GPR:$b, i32:$n)), (ST_W_L GPR:$b, $n, GPR:$v)>;
-def : Pat<(truncstorei8 GPR:$v, (AddrB GPR:$b, i32:$n)), (ST_B_L GPR:$b, $n, GPR:$v)>;
-def : Pat<(truncstorei16 GPR:$v, (AddrH GPR:$b, i32:$n)), (ST_H_L GPR:$b, $n, GPR:$v)>;
+def : Pat<(store (i32 GPR:$v), (AddrW i32:$b, i32:$n)), (ST_W_L GPR:$b, $n, GPR:$v)>;
+def : Pat<(truncstorei8 (i32 GPR:$v), (AddrB i32:$b, i32:$n)), (ST_B_L GPR:$b, $n, GPR:$v)>;
+def : Pat<(truncstorei16 (i32 GPR:$v), (AddrH i32:$b, i32:$n)), (ST_H_L GPR:$b, $n, GPR:$v)>;
 
 // Branches: compare two registers and branch; `if` compares unsigned, `ifs`
 // signed (pi32v2-isa docs/ISA.md). The assembler backend relaxes the short
 // forms.
 multiclass BrCC<CondCode cc, Instruction I> {
-  def : Pat<(brcc cc, GPR:$a, GPR:$b, bb:$t), (I GPR:$a, GPR:$b, bb:$t)>;
+  def : Pat<(brcc cc, i32:$a, i32:$b, bb:$t), (I GPR:$a, GPR:$b, bb:$t)>;
 }
 defm : BrCC<SETEQ, BEQ_RR>;
 defm : BrCC<SETNE, BNE_RR>;
@@ -174,16 +195,92 @@ defm : BrCC<SETGE, BGES_RR>;
 defm : BrCC<SETLT, BLTS_RR>;
 defm : BrCC<SETGT, BGTS_RR>;
 defm : BrCC<SETLE, BLES_RR>;
+// Compared with a constant: the forms with a 10-bit constant (signed for ==,
+// != and ifs, unsigned for if), else those with 12 bits (the assembler
+// backend relaxes either for the branch distance).
+def simm10 : ImmLeaf<i32, [{ return isInt<10>(Imm); }]>;
+def uimm10 : ImmLeaf<i32, [{ return isUInt<10>(Imm); }]>;
+def simm12 : ImmLeaf<i32, [{ return isInt<12>(Imm); }]>;
+def uimm12 : ImmLeaf<i32, [{ return isUInt<12>(Imm); }]>;
+multiclass BrCCImm<CondCode cc, ImmLeaf Short, Instruction I, ImmLeaf Long,
+                   Instruction IL> {
+  def : Pat<(brcc cc, i32:$a, Short:$n, bb:$t), (I GPR:$a, imm:$n, bb:$t)>;
+  def : Pat<(brcc cc, i32:$a, Long:$n, bb:$t), (IL GPR:$a, imm:$n, bb:$t)>;
+}
+defm : BrCCImm<SETEQ, simm10, BEQ_RI, simm12, BEQ_RI_L>;
+defm : BrCCImm<SETNE, simm10, BNE_RI, simm12, BNE_RI_L>;
+defm : BrCCImm<SETUGE, uimm10, BGE_RI, uimm12, BGE_RI_L>;
+defm : BrCCImm<SETULT, uimm10, BLT_RI, uimm12, BLT_RI_L>;
+defm : BrCCImm<SETUGT, uimm10, BGT_RI, uimm12, BGT_RI_L>;
+defm : BrCCImm<SETULE, uimm10, BLE_RI, uimm12, BLE_RI_L>;
+defm : BrCCImm<SETGE, simm10, BGES_RI, simm12, BGES_RI_L>;
+defm : BrCCImm<SETLT, simm10, BLTS_RI, simm12, BLTS_RI_L>;
+defm : BrCCImm<SETGT, simm10, BGTS_RI, simm12, BGTS_RI_L>;
+defm : BrCCImm<SETLE, simm10, BLES_RI, simm12, BLES_RI_L>;
 def : Pat<(br bb:$t), (GOTO_S bb:$t)>;
-def : Pat<(brind GPR:$a), (GOTO_R GPR:$a)>;
+def : Pat<(brind i32:$a), (GOTO_R GPR:$a)>;
 
 // Atomic loads and stores of up to a word are single accesses; a fence is csync.
-def : Pat<(i32 (atomic_load_32 (AddrW GPR:$b, i32:$n))), (LD_W_L GPR:$b, $n)>;
-def : Pat<(i32 (atomic_load_zext_16 (AddrH GPR:$b, i32:$n))), (LD_HU_L GPR:$b, $n)>;
-def : Pat<(i32 (atomic_load_zext_8 (AddrB GPR:$b, i32:$n))), (LD_BU_L GPR:$b, $n)>;
+def : Pat<(i32 (atomic_load_32 (AddrW i32:$b, i32:$n))), (LD_W_L GPR:$b, $n)>;
+def : Pat<(i32 (atomic_load_zext_16 (AddrH i32:$b, i32:$n))), (LD_HU_L GPR:$b, $n)>;
+def : Pat<(i32 (atomic_load_zext_8 (AddrB i32:$b, i32:$n))), (LD_BU_L GPR:$b, $n)>;
 def : Pat<(i32 (atomic_load_32 (AddrFI i32:$fi, i32:$off))), (LDW_FI $fi, $off)>;
-def : Pat<(atomic_store_32 GPR:$v, (AddrW GPR:$b, i32:$n)), (ST_W_L GPR:$b, $n, GPR:$v)>;
-def : Pat<(atomic_store_16 GPR:$v, (AddrH GPR:$b, i32:$n)), (ST_H_L GPR:$b, $n, GPR:$v)>;
-def : Pat<(atomic_store_8 GPR:$v, (AddrB GPR:$b, i32:$n)), (ST_B_L GPR:$b, $n, GPR:$v)>;
-def : Pat<(atomic_store_32 GPR:$v, (AddrFI i32:$fi, i32:$off)), (STW_FI GPR:$v, $fi, $off)>;
+def : Pat<(atomic_store_32 (i32 GPR:$v), (AddrW i32:$b, i32:$n)), (ST_W_L GPR:$b, $n, GPR:$v)>;
+def : Pat<(atomic_store_16 (i32 GPR:$v), (AddrH i32:$b, i32:$n)), (ST_H_L GPR:$b, $n, GPR:$v)>;
+def : Pat<(atomic_store_8 (i32 GPR:$v), (AddrB i32:$b, i32:$n)), (ST_B_L GPR:$b, $n, GPR:$v)>;
+def : Pat<(atomic_store_32 (i32 GPR:$v), (AddrFI i32:$fi, i32:$off)), (STW_FI GPR:$v, $fi, $off)>;
 def : Pat<(atomic_fence timm, timm), (CSYNC)>;
+
+// Single-precision float (FeatureFPRev1: -mcpu=r3 and ac791n), as JieLi's
+// compiler does it: the values in general registers, + - * / and the
+// conversions in the (f) forms, compares by iff branches; negation and abs are
+// integer operations on the sign bit, doubles and the rest library calls.
+def fpimm_bits : SDNodeXForm<fpimm, [{
+  return CurDAG->getTargetConstant(
+      N->getValueAPF().bitcastToAPInt().getSExtValue(), SDLoc(N), MVT::i32);
+}]>;
+def fpimm_s16 : PatLeaf<(fpimm), [{
+  return isInt<16>(N->getValueAPF().bitcastToAPInt().getSExtValue());
+}]>;
+def : Pat<(f32 fpimm_s16:$v), (LI_S16 (fpimm_bits $v))>;
+def : Pat<(f32 fpimm:$v), (LI_U32 (fpimm_bits $v))>;
+def : Pat<(i32 (bitconvert (f32 GPR:$a))), (COPY_TO_REGCLASS GPR:$a, GPR)>;
+def : Pat<(f32 (bitconvert (i32 GPR:$a))), (COPY_TO_REGCLASS GPR:$a, GPR)>;
+def : Pat<(f32 (load (AddrW i32:$b, i32:$n))), (LD_W_L GPR:$b, $n)>;
+def : Pat<(f32 (load (AddrFI i32:$fi, i32:$off))), (LDW_FI $fi, $off)>;
+def : Pat<(store (f32 GPR:$v), (AddrW i32:$b, i32:$n)), (ST_W_L GPR:$b, $n, GPR:$v)>;
+def : Pat<(store (f32 GPR:$v), (AddrFI i32:$fi, i32:$off)), (STW_FI GPR:$v, $fi, $off)>;
+
+let Predicates = [HasFPRev1] in {
+def : Pat<(fadd GPR:$a, GPR:$b), (ADD_F_RRR GPR:$a, GPR:$b)>;
+def : Pat<(fsub GPR:$a, GPR:$b), (SUB_F_RRR GPR:$a, GPR:$b)>;
+def : Pat<(fmul GPR:$a, GPR:$b), (MUL_F_RRR GPR:$a, GPR:$b)>;
+def : Pat<(fdiv GPR:$a, GPR:$b), (DIV_F_RRR GPR:$a, GPR:$b)>;
+def : Pat<(i32 (fp_to_sint (f32 GPR:$a))), (FTOI_TRUNC_RR GPR:$a)>;
+def : Pat<(i32 (fp_to_uint (f32 GPR:$a))), (FTOU_TRUNC_RR GPR:$a)>;
+def : Pat<(f32 (sint_to_fp (i32 GPR:$a))), (ITOF_RR GPR:$a)>;
+def : Pat<(f32 (uint_to_fp (i32 GPR:$a))), (UTOF_RR GPR:$a)>;
+
+// iff: ordered ==, < , <=, >, >= and their unordered inverses. A condition
+// without o/u (fast math) takes either.
+multiclass BrFCC<CondCode cc, Instruction I> {
+  def : Pat<(brcc cc, (f32 GPR:$a), (f32 GPR:$b), bb:$t),
+            (I GPR:$a, GPR:$b, bb:$t)>;
+}
+defm : BrFCC<SETOEQ, BFEQ_RR>;
+defm : BrFCC<SETEQ, BFEQ_RR>;
+defm : BrFCC<SETUNE, BFUNE_RR>;
+defm : BrFCC<SETNE, BFUNE_RR>;
+defm : BrFCC<SETOLT, BFLT_RR>;
+defm : BrFCC<SETLT, BFLT_RR>;
+defm : BrFCC<SETUGE, BFUGE_RR>;
+defm : BrFCC<SETOLE, BFLE_RR>;
+defm : BrFCC<SETLE, BFLE_RR>;
+defm : BrFCC<SETUGT, BFUGT_RR>;
+defm : BrFCC<SETOGT, BFGT_RR>;
+defm : BrFCC<SETGT, BFGT_RR>;
+defm : BrFCC<SETULE, BFULE_RR>;
+defm : BrFCC<SETOGE, BFGE_RR>;
+defm : BrFCC<SETGE, BFGE_RR>;
+defm : BrFCC<SETULT, BFULT_RR>;
+}
