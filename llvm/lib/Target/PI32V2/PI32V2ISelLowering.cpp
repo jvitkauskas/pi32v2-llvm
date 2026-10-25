@@ -67,7 +67,7 @@ PI32V2TargetLowering::PI32V2TargetLowering(const TargetMachine &TM,
 
   setOperationAction(ISD::BR_CC, MVT::i32, Legal);
   setOperationAction(ISD::BRCOND, MVT::Other, Expand);
-  setOperationAction(ISD::BR_JT, MVT::Other, Expand);
+  setOperationAction(ISD::BR_JT, MVT::Other, Custom);
   setOperationAction(ISD::SETCC, MVT::i32, Expand);
   setOperationAction(ISD::SELECT, MVT::i32, Expand);
   setOperationAction(ISD::SELECT_CC, MVT::i32, Custom);
@@ -75,8 +75,7 @@ PI32V2TargetLowering::PI32V2TargetLowering(const TargetMachine &TM,
   for (unsigned Op :
        {ISD::SREM, ISD::UREM, ISD::SDIVREM, ISD::UDIVREM, ISD::MULHS,
         ISD::MULHU, ISD::ROTL,
-        ISD::CTPOP, ISD::CTTZ, ISD::SHL_PARTS,
-        ISD::SRA_PARTS, ISD::SRL_PARTS, ISD::DYNAMIC_STACKALLOC,
+        ISD::CTPOP, ISD::CTTZ, ISD::DYNAMIC_STACKALLOC,
         ISD::STACKSAVE, ISD::STACKRESTORE})
     setOperationAction(Op, MVT::i32, Expand);
   // 64-bit add and subtract through the carry flag (add then addc, sub then
@@ -97,6 +96,9 @@ PI32V2TargetLowering::PI32V2TargetLowering(const TargetMachine &TM,
   // div.s.ppr (ReplaceNodeResults); others are library calls.
   for (unsigned Op : {ISD::UDIV, ISD::SDIV, ISD::UREM, ISD::SREM})
     setOperationAction(Op, MVT::i64, Custom);
+  // 64-bit shifts by a register: the pair shifts (lowerShiftParts)
+  for (unsigned Op : {ISD::SHL_PARTS, ISD::SRL_PARTS, ISD::SRA_PARTS})
+    setOperationAction(Op, MVT::i32, Custom);
   setTargetDAGCombine({ISD::BR_CC, ISD::SELECT_CC});
   setOperationAction(ISD::VASTART, MVT::Other, Custom);
   setOperationAction(ISD::RETURNADDR, MVT::i32, Custom);
@@ -148,6 +150,30 @@ SDValue PI32V2TargetLowering::LowerOperation(SDValue Op,
     return lowerAddress(Op, DAG);
   case ISD::SELECT_CC:
     return lowerSelectCC(Op, DAG);
+  case ISD::BR_JT: {
+    // the index and the table, for PseudoBRJT (tbb/tbh as JieLi's compiler)
+    SDLoc DL(Op);
+    SDValue Table = Op.getOperand(1);
+    if (Table.getOpcode() == PI32V2ISD::WRAPPER)
+      Table = Table.getOperand(0);
+    unsigned JTI = cast<JumpTableSDNode>(Table)->getIndex();
+    return DAG.getNode(PI32V2ISD::BRJT, DL, MVT::Other, Op.getOperand(0),
+                       Op.getOperand(2), DAG.getTargetJumpTable(JTI, MVT::i32));
+  }
+  case ISD::SHL_PARTS:
+  case ISD::SRL_PARTS:
+  case ISD::SRA_PARTS: {
+    // r(2n+1)_r(2n) <<= count (>>=, >>>=): a count is its low 8 bits, 0..63
+    // as C needs them
+    SDLoc DL(Op);
+    unsigned Opc = Op.getOpcode() == ISD::SHL_PARTS   ? PI32V2ISD::SHL64
+                   : Op.getOpcode() == ISD::SRL_PARTS ? PI32V2ISD::SRL64
+                                                      : PI32V2ISD::SRA64;
+    SDValue R = DAG.getNode(Opc, DL, DAG.getVTList(MVT::i32, MVT::i32),
+                            Op.getOperand(0), Op.getOperand(1),
+                            Op.getOperand(2));
+    return DAG.getMergeValues({R.getValue(0), R.getValue(1)}, DL);
+  }
   case ISD::VASTART: {
     // va_list is a pointer to the first unnamed word.
     MachineFunction &MF = DAG.getMachineFunction();

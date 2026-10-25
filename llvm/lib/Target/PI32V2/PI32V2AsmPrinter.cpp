@@ -17,6 +17,9 @@
 #include "MCTargetDesc/PI32V2MCTargetDesc.h"
 #include "PI32V2.h"
 #include "PI32V2TargetMachine.h"
+#include "llvm/ADT/DenseMap.h"
+#include "PI32V2Subtarget.h"
+#include "PI32V2InstrInfo.h"
 #include "TargetInfo/PI32V2TargetInfo.h"
 #include "llvm/CodeGen/AsmPrinter.h"
 #include "llvm/CodeGen/ISDOpcodes.h"
@@ -58,6 +61,8 @@ private:
   // The instructions still to come in the open if block's parts.
   unsigned IfThen = 0, IfElse = 0;
   void emitOne(const MachineInstr *MI);
+  void emitBRJT(const MachineInstr *MI);
+  void emitJumpTableInfo() override {} // the tables are inline (emitBRJT)
   void emitSelect(const MachineInstr *MI);
   void closeIfBlock();
   MCOperand lowerSymbol(const MachineOperand &MO, MCSymbol *Sym) const;
@@ -241,6 +246,89 @@ static unsigned postForm(unsigned Opc, unsigned &Skip) {
   return 0;
 }
 
+// A switch. The table follows the instruction, so the entries are the forward
+// distances of the cases: tbb (bytes) or tbh (halfwords, the index doubled),
+// target = the table's start + 2 * entry, as JieLi's compiler makes them. A
+// case placed before the switch, or one too far for halfwords: the addresses
+// themselves, loaded from an inline table.
+void PI32V2AsmPrinter::emitBRJT(const MachineInstr *MI) {
+  Register Idx = MI->getOperand(2).getReg(), Tmp = MI->getOperand(1).getReg();
+  const std::vector<MachineBasicBlock *> &Cases =
+      MF->getJumpTableInfo()->getJumpTables()[MI->getOperand(3).getIndex()].MBBs;
+  const PI32V2InstrInfo &TII = *MF->getSubtarget<PI32V2Subtarget>().getInstrInfo();
+  // the layout from here: the most bytes up to each block (a branch may grow)
+  DenseMap<const MachineBasicBlock *, uint64_t> At;
+  bool Seen = false;
+  uint64_t Pos = 0;
+  for (const MachineBasicBlock &B : *MF) {
+    if (&B == MI->getParent()) {
+      Seen = true;
+      continue;
+    }
+    if (!Seen)
+      continue;
+    At[&B] = Pos;
+    for (const MachineInstr &I : B)
+      Pos += I.isBranch() && !I.isIndirectBranch() ? 6 : TII.getInstSizeInBytes(I);
+    Pos += 1; // alignment
+  }
+  uint64_t Far = 0;
+  bool Forward = true;
+  for (const MachineBasicBlock *C : Cases) {
+    auto It = At.find(C);
+    if (It == At.end()) {
+      Forward = false;
+      break;
+    }
+    Far = std::max(Far, It->second);
+  }
+  auto Emit = [&](unsigned Opc, std::initializer_list<MCOperand> Ops) {
+    MCInst I;
+    I.setOpcode(Opc);
+    for (const MCOperand &O : Ops)
+      I.addOperand(O);
+    if (!NoCompress)
+      PI32V2::compressInst(I, *MF->getSubtarget().getInstrInfo(),
+                           *OutContext.getRegisterInfo());
+    EmitToStreamer(*OutStreamer, I);
+  };
+  MCOperand R = MCOperand::createReg(Idx);
+  uint64_t N = Cases.size();
+  auto Entries = [&](unsigned Size) {
+    MCSymbol *Start = OutContext.createTempSymbol("jts");
+    OutStreamer->emitLabel(Start);
+    for (const MachineBasicBlock *C : Cases)
+      OutStreamer->emitValue(
+          MCBinaryExpr::createDiv(
+              MCBinaryExpr::createSub(MCSymbolRefExpr::create(C->getSymbol(), OutContext),
+                                      MCSymbolRefExpr::create(Start, OutContext),
+                                      OutContext),
+              MCConstantExpr::create(2, OutContext), OutContext),
+          Size);
+    OutStreamer->emitValueToAlignment(Align(2));
+  };
+  if (Forward && N + 1 + Far <= 2 * 255) {
+    Emit(PI32V2::TBB, {R});
+    Entries(1);
+    return;
+  }
+  if (Forward && 2 * N + 2 + Far <= 2 * 65535) {
+    Emit(PI32V2::LSL_RRI_L, {R, R, MCOperand::createImm(1)});
+    Emit(PI32V2::TBH, {R});
+    Entries(2);
+    return;
+  }
+  MCSymbol *Table = OutContext.createTempSymbol("jta");
+  Emit(PI32V2::LI_U32, {MCOperand::createReg(Tmp),
+                        MCOperand::createExpr(MCSymbolRefExpr::create(Table, OutContext))});
+  Emit(PI32V2::LD_W_IDXS, {R, MCOperand::createReg(Tmp), R});
+  Emit(PI32V2::GOTO_R, {R});
+  OutStreamer->emitValueToAlignment(Align(4));
+  OutStreamer->emitLabel(Table);
+  for (const MachineBasicBlock *C : Cases)
+    OutStreamer->emitValue(MCSymbolRefExpr::create(C->getSymbol(), OutContext), 4);
+}
+
 void PI32V2AsmPrinter::emitOne(const MachineInstr *MI) {
   MCInst Inst;
   unsigned Opc = MI->getOpcode();
@@ -259,6 +347,9 @@ void PI32V2AsmPrinter::emitOne(const MachineInstr *MI) {
     return;
   }
   switch (Opc) {
+  case PI32V2::PseudoBRJT:
+    emitBRJT(MI);
+    return;
   case PI32V2::SELECT_AND:
   case PI32V2::SELECT_ANDI:
   case PI32V2::SELECT_CC:

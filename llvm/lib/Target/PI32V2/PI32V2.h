@@ -19,6 +19,7 @@ class PI32V2TargetMachine;
 FunctionPass *createPI32V2ISelDag(PI32V2TargetMachine &TM,
                                   CodeGenOptLevel OptLevel);
 FunctionPass *createPI32V2IfBlocksPass();
+FunctionPass *createPI32V2Div64PreparePass();
 
 namespace PI32V2 {
 // An `if (...) {` block opener (PI32V2IfBlocks.cpp).

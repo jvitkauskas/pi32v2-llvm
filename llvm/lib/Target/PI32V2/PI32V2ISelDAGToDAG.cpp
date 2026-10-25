@@ -201,7 +201,10 @@ void PI32V2DAGToDAGISel::Select(SDNode *N) {
     return;
   }
   if (N->getOpcode() == PI32V2ISD::UDIV64 ||
-      N->getOpcode() == PI32V2ISD::SDIV64) {
+      N->getOpcode() == PI32V2ISD::SDIV64 ||
+      N->getOpcode() == PI32V2ISD::SHL64 ||
+      N->getOpcode() == PI32V2ISD::SRL64 ||
+      N->getOpcode() == PI32V2ISD::SRA64) {
     // the dividend as a register pair, the quotient a pair
     SDLoc DL(N);
     SDValue Ops[] = {
@@ -213,8 +216,14 @@ void PI32V2DAGToDAGISel::Select(SDNode *N) {
     SDValue X(CurDAG->getMachineNode(TargetOpcode::REG_SEQUENCE, DL, MVT::i64,
                                      Ops),
               0);
-    unsigned Opc = N->getOpcode() == PI32V2ISD::UDIV64 ? PI32V2::DIV_U_PPR
-                                                       : PI32V2::DIV_S_PPR;
+    unsigned Opc;
+    switch (N->getOpcode()) {
+    case PI32V2ISD::UDIV64: Opc = PI32V2::DIV_U_PPR; break;
+    case PI32V2ISD::SDIV64: Opc = PI32V2::DIV_S_PPR; break;
+    case PI32V2ISD::SHL64: Opc = PI32V2::LSL_PAIR_R; break;
+    case PI32V2ISD::SRL64: Opc = PI32V2::LSR_PAIR_R; break;
+    default: Opc = PI32V2::ASR_PAIR_R; break;
+    }
     SDValue Q(CurDAG->getMachineNode(Opc, DL, MVT::i64, X, N->getOperand(2)),
               0);
     if (!SDValue(N, 0).use_empty())
@@ -223,6 +232,15 @@ void PI32V2DAGToDAGISel::Select(SDNode *N) {
     if (!SDValue(N, 1).use_empty())
       ReplaceUses(SDValue(N, 1), CurDAG->getTargetExtractSubreg(
                                      PI32V2::sub_hi, DL, MVT::i32, Q));
+    CurDAG->RemoveDeadNode(N);
+    return;
+  }
+  if (N->getOpcode() == PI32V2ISD::BRJT) {
+    SDLoc DL(N);
+    SDNode *M = CurDAG->getMachineNode(
+        PI32V2::PseudoBRJT, DL, MVT::i32, MVT::i32, MVT::Other,
+        {N->getOperand(1), N->getOperand(2), N->getOperand(0)});
+    ReplaceUses(SDValue(N, 0), SDValue(M, 2));
     CurDAG->RemoveDeadNode(N);
     return;
   }
