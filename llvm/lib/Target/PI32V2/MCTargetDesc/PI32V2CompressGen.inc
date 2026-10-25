@@ -23,6 +23,7 @@ static const PI32V2CompressRule CompressRules[] = {
     {PI32V2::ASR_RRI_L, PI32V2::ASR_RRI, -1, -1, -1, 0, 3, {0, 1, 2}},
     {PI32V2::ASR_RRI_L, PI32V2::ASR_RRI, 0, 1, -1, 0, 3, {0, 1, 2}},
     {PI32V2::ASR_RRR, PI32V2::ASR_RR, 0, 1, -1, 0, 3, {0, 0, 2}},
+    {PI32V2::BEQ_AND_MODIMM_RI_L, PI32V2::BEQ_AND_RI, -1, -1, -1, 0, 3, {0, 1, 2}},
     {PI32V2::BEQ_RI, PI32V2::BEQZ, -1, -1, 1, 0, 2, {0, 2}},
     {PI32V2::BEQ_RI_L, PI32V2::BEQZ, -1, -1, 1, 0, 2, {0, 2}},
     {PI32V2::BEQ_RI_L, PI32V2::BEQ_RI, -1, -1, -1, 0, 3, {0, 1, 2}},
@@ -72,6 +73,7 @@ static const PI32V2CompressRule CompressRules[] = {
     {PI32V2::BLT_RI_L, PI32V2::BLT_RI, -1, -1, -1, 0, 3, {0, 1, 2}},
     {PI32V2::BLT_RR_L, PI32V2::BLT_RR, -1, -1, -1, 0, 3, {0, 1, 2}},
     {PI32V2::BLT_RR_L, PI32V2::BLT_RR, 0, 1, -1, 0, 3, {0, 1, 2}},
+    {PI32V2::BNE_AND_MODIMM_RI_L, PI32V2::BNE_AND_RI, -1, -1, -1, 0, 3, {0, 1, 2}},
     {PI32V2::BNE_RI, PI32V2::BNEZ, -1, -1, 1, 0, 2, {0, 2}},
     {PI32V2::BNE_RI_L, PI32V2::BNEZ, -1, -1, 1, 0, 2, {0, 2}},
     {PI32V2::BNE_RI_L, PI32V2::BNE_RI, -1, -1, -1, 0, 3, {0, 1, 2}},
@@ -156,6 +158,10 @@ static bool immFits(unsigned Opc, unsigned OpNo, int64_t V) {
     if (OpNo == 2)
       return fitsNum(V, 0, 5, 1, 0, 1, 32);
     return true;
+  case PI32V2::BEQ_AND_RI:
+    if (OpNo == 1)
+      return (uint64_t(V) >> 32) == 0 && llvm::isPowerOf2_32(uint32_t(V));
+    return true;
   case PI32V2::BEQ_RI:
     if (OpNo == 1)
       return fitsNum(V, 1, 10, 1, 0, 0, 0);
@@ -191,6 +197,10 @@ static bool immFits(unsigned Opc, unsigned OpNo, int64_t V) {
   case PI32V2::BLT_RI:
     if (OpNo == 1)
       return fitsNum(V, 0, 10, 1, 0, 0, 0);
+    return true;
+  case PI32V2::BNE_AND_RI:
+    if (OpNo == 1)
+      return (uint64_t(V) >> 32) == 0 && llvm::isPowerOf2_32(uint32_t(V));
     return true;
   case PI32V2::BNE_RI:
     if (OpNo == 1)

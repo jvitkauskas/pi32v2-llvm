@@ -14338,7 +14338,9 @@ def BEQ_AND_RI : PI32V2Inst32<(outs ), (ins GPR:$r, Opbit_F:$n, Optarget_9_2_got
   let Inst{2} = m{2};
   let Inst{1} = m{1};
   let Inst{0} = m{0};
+  let hasSideEffects = 0;
   let isBranch = 1;
+  let isTerminator = 1;
 }
 def BNE_AND_RI : PI32V2Inst32<(outs ), (ins GPR:$r, Opbit_F:$n, Optarget_9_2_goto:$m), "if ((${r} & ${n}) != 0) goto ${m}"> {
   bits<4> r;
@@ -14376,7 +14378,9 @@ def BNE_AND_RI : PI32V2Inst32<(outs ), (ins GPR:$r, Opbit_F:$n, Optarget_9_2_got
   let Inst{2} = m{2};
   let Inst{1} = m{1};
   let Inst{0} = m{0};
+  let hasSideEffects = 0;
   let isBranch = 1;
+  let isTerminator = 1;
 }
 def BNE_RR : PI32V2Inst32<(outs ), (ins GPR:$r, GPR:$s, Optarget_9_2_goto:$n), "if (${r} != ${s}) goto ${n}"> {
   bits<4> r;
@@ -81564,7 +81568,9 @@ def BEQ_AND_RR : PI32V2Inst32<(outs ), (ins GPR:$r, GPR:$s, Optarget_16_2_goto:$
   let Inst{2} = n{2};
   let Inst{1} = n{1};
   let Inst{0} = n{0};
+  let hasSideEffects = 0;
   let isBranch = 1;
+  let isTerminator = 1;
 }
 def BNE_AND_RR : PI32V2Inst32<(outs ), (ins GPR:$r, GPR:$s, Optarget_16_2_goto:$n), "if ((${r} & ${s}) != 0) goto ${n}"> {
   bits<4> r;
@@ -81602,7 +81608,9 @@ def BNE_AND_RR : PI32V2Inst32<(outs ), (ins GPR:$r, GPR:$s, Optarget_16_2_goto:$
   let Inst{2} = n{2};
   let Inst{1} = n{1};
   let Inst{0} = n{0};
+  let hasSideEffects = 0;
   let isBranch = 1;
+  let isTerminator = 1;
 }
 def BEQ_RI_L : PI32V2Inst48<(outs ), (ins GPR:$r, Opsimm_12_1_0_N_F:$i, Optarget_16_2_goto:$n), "if (${r} == ${i}) goto ${n}"> {
   bits<4> r;
@@ -151073,7 +151081,9 @@ def BEQ_AND_MODIMM_RI_L : PI32V2Inst48<(outs ), (ins GPR:$r, Opmodimm_F_F_F:$i, 
   let Inst{2} = n{2};
   let Inst{1} = n{1};
   let Inst{0} = n{0};
+  let hasSideEffects = 0;
   let isBranch = 1;
+  let isTerminator = 1;
 }
 def BNE_AND_MODIMM_RI_L : PI32V2Inst48<(outs ), (ins GPR:$r, Opmodimm_F_F_F:$i, Optarget_16_2_goto:$n), "if ((${r} & ${i}) != 0) goto ${n}"> {
   bits<4> r;
@@ -151127,7 +151137,9 @@ def BNE_AND_MODIMM_RI_L : PI32V2Inst48<(outs ), (ins GPR:$r, Opmodimm_F_F_F:$i, 
   let Inst{2} = n{2};
   let Inst{1} = n{1};
   let Inst{0} = n{0};
+  let hasSideEffects = 0;
   let isBranch = 1;
+  let isTerminator = 1;
 }
 def BUNKNOWN_RI_L_4TO7 : PI32V2Inst48<(outs ), (ins GPR:$r, Opsimm_12_1_0_N_F:$i, Optarget_16_2_goto:$n), "if (${r} ?? ${i}) goto ${n}"> {
   bits<4> r;

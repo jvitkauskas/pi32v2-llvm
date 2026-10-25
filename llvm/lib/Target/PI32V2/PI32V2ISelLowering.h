@@ -68,6 +68,7 @@ public:
   PI32V2TargetLowering(const TargetMachine &TM, const PI32V2Subtarget &STI);
 
   SDValue LowerOperation(SDValue Op, SelectionDAG &DAG) const override;
+  SDValue PerformDAGCombine(SDNode *N, DAGCombinerInfo &DCI) const override;
   // 64-bit division and remainder by a divisor that fits in 32 bits.
   void ReplaceNodeResults(SDNode *N, SmallVectorImpl<SDValue> &Results,
                           SelectionDAG &DAG) const override;

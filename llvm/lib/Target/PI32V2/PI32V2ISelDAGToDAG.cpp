@@ -47,6 +47,25 @@ public:
   bool selectAddrB(SDValue A, SDValue &B, SDValue &O) {
     return selectAddr(A, B, O, 1);
   }
+  // sp plus a constant (an outgoing argument's slot): the [sp+n] forms,
+  // n a multiple of the access size up to Max.
+  bool selectAddrSP(SDValue A, SDValue &O, int Scale, int64_t Max) {
+    SDValue Root = A;
+    int64_t C = 0;
+    if (CurDAG->isBaseWithConstantOffset(A)) {
+      Root = A.getOperand(0);
+      C = cast<ConstantSDNode>(A.getOperand(1))->getSExtValue();
+    }
+    if (Root.getOpcode() != ISD::CopyFromReg ||
+        cast<RegisterSDNode>(Root.getOperand(1))->getReg() != PI32V2::SP ||
+        C < 0 || C > Max || C % Scale)
+      return false;
+    O = CurDAG->getTargetConstant(C, SDLoc(A), MVT::i32);
+    return true;
+  }
+  bool selectAddrSPW(SDValue A, SDValue &O) { return selectAddrSP(A, O, 4, 4092); }
+  bool selectAddrSPH(SDValue A, SDValue &O) { return selectAddrSP(A, O, 2, 2046); }
+  bool selectAddrSPB(SDValue A, SDValue &O) { return selectAddrSP(A, O, 1, 4095); }
   // The memory read-modify-write forms: a register plus a word offset in 6
   // bits ([r+n] |= ..., n in -128..124).
   bool selectAddrRMW(SDValue A, SDValue &B, SDValue &O) {

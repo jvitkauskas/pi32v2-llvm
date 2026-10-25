@@ -69,11 +69,19 @@ public:
   getIntImmCostInst(unsigned Opc, unsigned Idx, const APInt &Imm, Type *Ty,
                     TTI::TargetCostKind CostKind,
                     Instruction *Inst = nullptr) const override {
+    int64_t V = Imm.getBitWidth() <= 64 ? Imm.getSExtValue() : 0;
     switch (Opc) {
     case Instruction::Load:
     case Instruction::Store:
     case Instruction::IntToPtr:
     case Instruction::GetElementPtr:
+      return getIntImmCost(Imm, Ty, CostKind);
+    case Instruction::Add:
+    case Instruction::Sub:
+      // an offset past what the add takes, often an address (0x50000 +
+      // p * 64 + k): neighbours become the same base plus k
+      if (isInt<14>(V) || PI32V2::modImmRawFor(uint32_t(V)).has_value())
+        return TTI::TCC_Free;
       return getIntImmCost(Imm, Ty, CostKind);
     default:
       return TTI::TCC_Free;

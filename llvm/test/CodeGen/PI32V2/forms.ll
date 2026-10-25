@@ -167,3 +167,27 @@ loop:
 done:
   ret i32 %s1
 }
+
+; Bit tests branch on the bit; a range check keeps small constants.
+; CHECK-LABEL: bittest:
+; CHECK:      if ((r0 & 0x4) == 0) {
+define i32 @bittest(i32 %a) nounwind {
+  %b = and i32 %a, 4
+  %c = icmp ne i32 %b, 0
+  %r = select i1 %c, i32 1, i32 2
+  ret i32 %r
+}
+
+; CHECK-LABEL: range:
+; CHECK:      r0 += -16
+; CHECK-NEXT: r1 = 14368
+define void @range(i32 %n) nounwind {
+  %a = add i32 %n, -14385
+  %c = icmp ult i32 %a, -14369
+  br i1 %c, label %ok, label %bad
+bad:
+  tail call i32 @g(i32 0)
+  ret void
+ok:
+  ret void
+}

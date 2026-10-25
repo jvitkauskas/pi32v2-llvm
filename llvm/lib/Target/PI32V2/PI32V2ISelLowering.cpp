@@ -97,6 +97,7 @@ PI32V2TargetLowering::PI32V2TargetLowering(const TargetMachine &TM,
   // div.s.ppr (ReplaceNodeResults); others are library calls.
   for (unsigned Op : {ISD::UDIV, ISD::SDIV, ISD::UREM, ISD::SREM})
     setOperationAction(Op, MVT::i64, Custom);
+  setTargetDAGCombine({ISD::BR_CC, ISD::SELECT_CC});
   setOperationAction(ISD::VASTART, MVT::Other, Custom);
   setOperationAction(ISD::RETURNADDR, MVT::i32, Custom);
   setOperationAction(ISD::FRAMEADDR, MVT::i32, Custom);
@@ -221,17 +222,56 @@ SDValue PI32V2TargetLowering::lowerAddress(SDValue Op,
   return DAG.getNode(PI32V2ISD::WRAPPER, DL, VT, T);
 }
 
+// A range check, (x + c1) u< c2, also is (x + (c1 - c2)) u>= -c2: LLVM writes
+// `a < lo || a > hi` one way, JieLi's compiler the other; take the one whose
+// constants the add and the compare hold (LHS, RHS and CC are updated).
+static bool rewriteRangeCheck(SDValue &LHS, SDValue &RHS, ISD::CondCode &CC,
+                              SelectionDAG &DAG, const SDLoc &DL) {
+  if (LHS.getOpcode() != ISD::ADD || LHS.getValueType() != MVT::i32)
+    return false;
+  auto *C1 = dyn_cast<ConstantSDNode>(LHS.getOperand(1));
+  auto *C2 = dyn_cast<ConstantSDNode>(RHS);
+  if (!C1 || !C2)
+    return false;
+  uint32_t A = C1->getZExtValue(), B = C2->getZExtValue();
+  ISD::CondCode K = CC;
+  // u> b is u>= b + 1, u<= b is u< b + 1
+  if (K == ISD::SETUGT || K == ISD::SETULE) {
+    if (B == 0xFFFFFFFFu)
+      return false;
+    ++B;
+    K = K == ISD::SETUGT ? ISD::SETUGE : ISD::SETULT;
+  }
+  if ((K != ISD::SETULT && K != ISD::SETUGE) || B == 0)
+    return false;
+  auto Cost = [](uint32_t Add, uint32_t Cmp) {
+    return (isInt<14>(int32_t(Add)) ? 0 : 1) + (isUInt<12>(Cmp) ? 0 : 1);
+  };
+  uint32_t A2 = A - B, B2 = 0u - B;
+  if (Cost(A2, B2) >= Cost(A, B))
+    return false;
+  LHS = DAG.getNode(ISD::ADD, DL, MVT::i32, LHS.getOperand(0),
+                    DAG.getConstant(A2, DL, MVT::i32));
+  RHS = DAG.getConstant(B2, DL, MVT::i32);
+  CC = K == ISD::SETULT ? ISD::SETUGE : ISD::SETULT;
+  return true;
+}
+
 SDValue PI32V2TargetLowering::lowerSelectCC(SDValue Op,
                                             SelectionDAG &DAG) const {
   SDLoc DL(Op);
   ISD::CondCode CC = cast<CondCodeSDNode>(Op.getOperand(4))->get();
+  SDValue LHS = Op.getOperand(0), RHS = Op.getOperand(1);
   // A float compare is marked in the condition: the branch is an iff.
+  bool Float = LHS.getValueType() == MVT::f32;
+  if (!Float)
+    rewriteRangeCheck(LHS, RHS, CC, DAG, DL);
   unsigned Cond = CC;
-  if (Op.getOperand(0).getValueType() == MVT::f32)
+  if (Float)
     Cond |= SelectFloat;
-  return DAG.getNode(PI32V2ISD::SELECT_CC, DL, Op.getValueType(),
-                     Op.getOperand(0), Op.getOperand(1), Op.getOperand(2),
-                     Op.getOperand(3), DAG.getConstant(Cond, DL, MVT::i32));
+  return DAG.getNode(PI32V2ISD::SELECT_CC, DL, Op.getValueType(), LHS, RHS,
+                     Op.getOperand(2), Op.getOperand(3),
+                     DAG.getConstant(Cond, DL, MVT::i32));
 }
 
 // ---- calls ------------------------------------------------------------------
@@ -288,6 +328,32 @@ SDValue PI32V2TargetLowering::LowerFormalArguments(
     }
   }
   return Chain;
+}
+
+SDValue PI32V2TargetLowering::PerformDAGCombine(SDNode *N,
+                                                DAGCombinerInfo &DCI) const {
+  SelectionDAG &DAG = DCI.DAG;
+  SDLoc DL(N);
+  switch (N->getOpcode()) {
+  case ISD::BR_CC: {
+    ISD::CondCode CC = cast<CondCodeSDNode>(N->getOperand(1))->get();
+    SDValue LHS = N->getOperand(2), RHS = N->getOperand(3);
+    if (!rewriteRangeCheck(LHS, RHS, CC, DAG, DL))
+      return SDValue();
+    return DAG.getNode(ISD::BR_CC, DL, MVT::Other, N->getOperand(0),
+                       DAG.getCondCode(CC), LHS, RHS, N->getOperand(4));
+  }
+  case ISD::SELECT_CC: {
+    ISD::CondCode CC = cast<CondCodeSDNode>(N->getOperand(4))->get();
+    SDValue LHS = N->getOperand(0), RHS = N->getOperand(1);
+    if (!rewriteRangeCheck(LHS, RHS, CC, DAG, DL))
+      return SDValue();
+    return DAG.getNode(ISD::SELECT_CC, DL, N->getValueType(0), LHS, RHS,
+                       N->getOperand(2), N->getOperand(3), DAG.getCondCode(CC));
+  }
+  default:
+    return SDValue();
+  }
 }
 
 void PI32V2TargetLowering::ReplaceNodeResults(SDNode *N,

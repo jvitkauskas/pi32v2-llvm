@@ -19,6 +19,7 @@
 #include "PI32V2TargetMachine.h"
 #include "TargetInfo/PI32V2TargetInfo.h"
 #include "llvm/CodeGen/AsmPrinter.h"
+#include "llvm/CodeGen/ISDOpcodes.h"
 #include "llvm/CodeGen/MachineInstr.h"
 #include "llvm/CodeGen/MachineJumpTableInfo.h"
 #include "llvm/MC/MCContext.h"
@@ -157,7 +158,8 @@ void PI32V2AsmPrinter::closeIfBlock() {
 void PI32V2AsmPrinter::emitInstruction(const MachineInstr *MI) {
   unsigned Opc = MI->getOpcode();
   if (Opc == PI32V2::SELECT_CC || Opc == PI32V2::SELECT_CC_RI ||
-      Opc == PI32V2::SELECT_CC_RRI || Opc == PI32V2::SELECT_CC_RII) {
+      Opc == PI32V2::SELECT_CC_RRI || Opc == PI32V2::SELECT_CC_RII ||
+      Opc == PI32V2::SELECT_AND || Opc == PI32V2::SELECT_ANDI) {
     emitSelect(MI); // never inside another block
     return;
   }
@@ -175,14 +177,25 @@ void PI32V2AsmPrinter::emitSelect(const MachineInstr *MI) {
   unsigned Opc = MI->getOpcode();
   bool ImmB = Opc == PI32V2::SELECT_CC_RI || Opc == PI32V2::SELECT_CC_RII;
   bool ImmT = Opc == PI32V2::SELECT_CC_RRI || Opc == PI32V2::SELECT_CC_RII;
+  // (a bit test: the mask as b, eq or ne)
   Register Dst = MI->getOperand(0).getReg();
+  bool And = Opc == PI32V2::SELECT_AND || Opc == PI32V2::SELECT_ANDI;
+  ImmT |= Opc == PI32V2::SELECT_ANDI;
+  ImmB |= And;
   if (!ImmT && MI->getOperand(3).getReg() == Dst)
     return; // both values in one register
-  unsigned Br = PI32V2::branchForCond(MI->getOperand(5).getImm());
-  if (ImmB)
-    Br = PI32V2::branchWithImm(Br);
+  unsigned Opener;
+  if (And)
+    Opener = MI->getOperand(5).getImm() == ISD::SETEQ ? PI32V2::IF_EQ_AND_RM
+                                                      : PI32V2::IF_NE_AND_RM;
+  else {
+    unsigned Br = PI32V2::branchForCond(MI->getOperand(5).getImm());
+    if (ImmB)
+      Br = PI32V2::branchWithImm(Br);
+    Opener = PI32V2::openerForBranch(Br);
+  }
   MCInst If;
-  If.setOpcode(PI32V2::openerForBranch(Br));
+  If.setOpcode(Opener);
   If.addOperand(MCOperand::createReg(MI->getOperand(1).getReg()));
   If.addOperand(ImmB ? MCOperand::createImm(MI->getOperand(2).getImm())
                      : MCOperand::createReg(MI->getOperand(2).getReg()));
@@ -246,6 +259,8 @@ void PI32V2AsmPrinter::emitOne(const MachineInstr *MI) {
     return;
   }
   switch (Opc) {
+  case PI32V2::SELECT_AND:
+  case PI32V2::SELECT_ANDI:
   case PI32V2::SELECT_CC:
   case PI32V2::SELECT_CC_RI:
   case PI32V2::SELECT_CC_RRI:
