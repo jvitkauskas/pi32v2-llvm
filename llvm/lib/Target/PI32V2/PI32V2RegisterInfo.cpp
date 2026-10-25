@@ -40,7 +40,11 @@ PI32V2RegisterInfo::getCallPreservedMask(const MachineFunction &MF,
 
 BitVector PI32V2RegisterInfo::getReservedRegs(const MachineFunction &MF) const {
   BitVector Reserved(getNumRegs());
-  for (MCPhysReg R : {PI32V2::RETI, PI32V2::RETE, PI32V2::RETX, PI32V2::SR4,
+  // rets too: never allocated, only saved (a callee-saved register) and read
+  // (__builtin_return_address), a read the machine sinker may move to a block
+  // where rets is not tracked live
+  for (MCPhysReg R : {PI32V2::RETI, PI32V2::RETE, PI32V2::RETX, PI32V2::RETS,
+                      PI32V2::SR4,
                       PI32V2::PSR, PI32V2::CNUM, PI32V2::USPN, PI32V2::SSPN,
                       PI32V2::ICFGN, PI32V2::ICFGS, PI32V2::ICFG, PI32V2::USP,
                       PI32V2::SSP, PI32V2::SP, PI32V2::PC})

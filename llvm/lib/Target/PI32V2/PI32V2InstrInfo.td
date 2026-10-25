@@ -475,7 +475,7 @@ def : Pat<(atomic_fence timm, timm), (CSYNC)>;
 // conversions in the (f) forms, compares by iff branches; negation and abs are
 // integer operations on the sign bit, doubles and the rest library calls.
 def fpimm_bits : SDNodeXForm<fpimm, [{
-  return CurDAG->getTargetConstant(
+  return CurDAG->getSignedTargetConstant(
       N->getValueAPF().bitcastToAPInt().getSExtValue(), SDLoc(N), MVT::i32);
 }]>;
 def fpimm_s16 : PatLeaf<(fpimm), [{
