@@ -62,8 +62,10 @@ static lto::Config createConfig(Ctx &ctx) {
   for (StringRef C : ctx.arg.mllvmOpts)
     c.MllvmArgs.emplace_back(C.str());
 
-  // Always emit a section per function/datum with LTO.
-  c.Options.FunctionSections = true;
+  // Always emit a section per function/datum with LTO. PI32V2: one .text for
+  // the functions, so that the assembler can use the 2-byte call between them
+  // (the target puts the ones that may be dead in sections of their own).
+  c.Options.FunctionSections = ctx.arg.emachine != EM_PI32V2;
   c.Options.DataSections = true;
 
   // Check if basic block sections must be used.

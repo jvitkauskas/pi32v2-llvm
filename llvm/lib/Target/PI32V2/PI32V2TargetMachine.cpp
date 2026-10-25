@@ -10,6 +10,7 @@
 #include "PI32V2TargetTransformInfo.h"
 #include "PI32V2.h"
 #include "PI32V2MachineFunctionInfo.h"
+#include "PI32V2TargetObjectFile.h"
 #include "TargetInfo/PI32V2TargetInfo.h"
 #include "llvm/CodeGen/Passes.h"
 #include "llvm/CodeGen/TargetLoweringObjectFileImpl.h"
@@ -46,7 +47,7 @@ PI32V2TargetMachine::PI32V2TargetMachine(const Target &T, const Triple &TT,
     : CodeGenTargetMachineImpl(T, TT.computeDataLayout(), TT, CPU, FS, Options,
                                RM.value_or(Reloc::Static),
                                getEffectiveCodeModel(CM, CodeModel::Small), OL),
-      TLOF(std::make_unique<TargetLoweringObjectFileELF>()) {
+      TLOF(std::make_unique<PI32V2TargetObjectFile>()) {
   initAsmInfo();
 }
 
