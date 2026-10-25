@@ -132,6 +132,30 @@ bool PI32V2DAGToDAGISel::selectAddr(SDValue Addr, SDValue &Base, SDValue &Off,
   if (isFrameAddr(Addr))
     return false;
   SDLoc DL(Addr);
+  // Keep the aligned portion of an OR address in one register and use the
+  // low displacement in the access.  In particular, GPIO port addresses
+  // (p << 6) | (0x50000 + k) can share (p << 6) | 0x50000.
+  // This does not assume that the variable part is disjoint from the high
+  // constant: only the low six bits must be zero.
+  if (Addr.getOpcode() == ISD::OR &&
+      Addr.getValueType() == MVT::i32) {
+    if (auto *C = dyn_cast<ConstantSDNode>(Addr.getOperand(1))) {
+      uint32_t V = C->getZExtValue();
+      unsigned Low = V & 63;
+      if (Low && (V & ~63u) && !PI32V2::modImmRawFor(V).has_value() &&
+          Low % Scale == 0 && isIntN(Bits, Low / Scale) &&
+          CurDAG->MaskedValueIsZero(Addr.getOperand(0), APInt(32, 63)) &&
+          PI32V2::modImmRawFor(V & ~63u).has_value()) {
+        SDValue High(CurDAG->getMachineNode(
+            PI32V2::LI_MODIMM, DL, MVT::i32,
+            CurDAG->getTargetConstant(V & ~63u, DL, MVT::i32)), 0);
+        Base = SDValue(CurDAG->getMachineNode(
+            PI32V2::OR_RRR, DL, MVT::i32, Addr.getOperand(0), High), 0);
+        Off = CurDAG->getTargetConstant(Low, DL, MVT::i32);
+        return true;
+      }
+    }
+  }
   if (CurDAG->isBaseWithConstantOffset(Addr) &&
       !isa<FrameIndexSDNode>(Addr.getOperand(0))) {
     int64_t C = cast<ConstantSDNode>(Addr.getOperand(1))->getSExtValue();

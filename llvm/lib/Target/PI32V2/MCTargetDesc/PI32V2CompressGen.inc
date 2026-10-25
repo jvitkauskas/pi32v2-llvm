@@ -18,6 +18,7 @@ static const PI32V2CompressRule CompressRules[] = {
     {PI32V2::ADD_S14_RRI, PI32V2::ADD_RRI, -1, -1, -1, 0, 3, {0, 1, 2}},
     {PI32V2::ADD_SP_I_L, PI32V2::ADD_SP_I, -1, -1, -1, 0, 1, {0}},
     {PI32V2::AND_MODIMM_RRI, PI32V2::AND_INVBIT, 0, 1, -1, 0, 3, {0, 0, 2}},
+    {PI32V2::AND_NMODIMM_RRI, PI32V2::AND_INVBIT, 0, 1, -1, 0, 3, {0, 0, 2}},
     {PI32V2::AND_RRR, PI32V2::AND_RR, 0, 1, -1, 0, 3, {0, 0, 2}},
     {PI32V2::AND_RRR, PI32V2::AND_RR, 0, 2, -1, 0, 3, {0, 0, 1}},
     {PI32V2::ASR_RRI_L, PI32V2::ASR_RRI, -1, -1, -1, 0, 3, {0, 1, 2}},

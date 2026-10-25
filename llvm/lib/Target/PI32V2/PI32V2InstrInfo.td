@@ -355,6 +355,10 @@ def : Pat<(truncstorei8 (i32 GPR:$v), (AddrSPB i32:$n)), (ST_B_SP_L $n, GPR:$v)>
 // compiler makes register updates: [r+n] |= m, [r+n] &= ~s, [r+n] = m, ...
 def AddrRMW : ComplexPattern<iPTR, 2, "selectAddrRMW", [], []>;
 def nmodimm : ImmLeaf<i32, [{ return PI32V2::modImmRawFor(~uint32_t(Imm)).has_value(); }]>;
+// The general register form is useful too: do not materialize a mask like
+// 0xffffffe0 in a register only to AND it.
+def : Pat<(and GPR:$a, nmodimm:$n),
+          (AND_NMODIMM_RRI GPR:$a, imm:$n)>;
 def simm12rmw : ImmLeaf<i32, [{ return isInt<12>(Imm); }]>;
 def modimm_wide : ImmLeaf<i32, [{
   return PI32V2::modImmRawFor(uint32_t(Imm)).has_value() && !isUInt<8>(Imm);
