@@ -49,6 +49,12 @@ static bool isPPCBareMetal(const llvm::Triple &Triple) {
          Triple.getEnvironment() == llvm::Triple::EABI;
 }
 
+/// JieLi's pi32v2 has no operating system: pi32v2, pi32v2-*-none-elf.
+static bool isPI32V2BareMetal(const llvm::Triple &Triple) {
+  return Triple.getArch() == llvm::Triple::pi32v2 &&
+         Triple.getOS() == llvm::Triple::UnknownOS;
+}
+
 /// Is the triple {ix86,x86_64}-*-none-elf?
 static bool isX86BareMetal(const llvm::Triple &Triple) {
   return Triple.isX86() && Triple.getOS() == llvm::Triple::UnknownOS &&
@@ -281,7 +287,8 @@ void BareMetal::findMultilibs(const Driver &D, const llvm::Triple &Triple,
 bool BareMetal::handlesTarget(const llvm::Triple &Triple) {
   return arm::isARMEABIBareMetal(Triple) ||
          aarch64::isAArch64BareMetal(Triple) || isRISCVBareMetal(Triple) ||
-         isPPCBareMetal(Triple) || isX86BareMetal(Triple);
+         isPPCBareMetal(Triple) || isX86BareMetal(Triple) ||
+         isPI32V2BareMetal(Triple);
 }
 
 Tool *BareMetal::buildLinker() const {
