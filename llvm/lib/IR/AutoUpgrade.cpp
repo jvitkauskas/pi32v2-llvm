@@ -7035,6 +7035,14 @@ std::string llvm::UpgradeDataLayoutString(StringRef DL, StringRef TT) {
     return DL.empty() ? std::string("G1") : (DL + "-G1").str();
   }
 
+  // JieLi's clang (LLVM 4) gives pi32v2 no stack alignment; the stack is
+  // word-aligned (the AC79 SDK's bitcode libraries).
+  if (T.getArch() == Triple::pi32v2) {
+    if (!DL.empty() && !DL.contains("-S") && !DL.starts_with("S"))
+      return (DL + "-S32").str();
+    return DL.str();
+  }
+
   if (T.isLoongArch64() || T.isRISCV64()) {
     // Make i32 a native type for 64-bit LoongArch and RISC-V.
     auto I = DL.find("-n64-");
