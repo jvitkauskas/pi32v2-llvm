@@ -29,6 +29,11 @@ class PI32V2TargetObjectFile : public TargetLoweringObjectFileELF {
 
 public:
   void Initialize(MCContext &Ctx, const TargetMachine &TM) override;
+  /// No SHF_GNU_RETAIN for __attribute__((used)): with JieLi's toolchain it
+  /// keeps a global from the compiler, not from --gc-sections (the AC79 SDK's
+  /// handler tables, in sections the linker script does not place, are
+  /// dropped when nothing refers to them).
+  void getModuleMetadata(Module &M) override {}
   MCSection *SelectSectionForGlobal(const GlobalObject *GO, SectionKind Kind,
                                     const TargetMachine &TM) const override;
 };
