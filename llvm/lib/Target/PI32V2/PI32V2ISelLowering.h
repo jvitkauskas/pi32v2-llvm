@@ -104,6 +104,14 @@ public:
 
   ConstraintType getConstraintType(StringRef Constraint) const override;
 
+  // No vector registers: a vector compare (from IR vectorized elsewhere, or a
+  // struct copy SROA made a vector) is split into word compares, each giving
+  // a word.
+  EVT getSetCCResultType(const DataLayout &DL, LLVMContext &Context,
+                         EVT VT) const override {
+    return VT.isVector() ? VT.changeVectorElementTypeToInteger() : MVT::i32;
+  }
+
   std::pair<unsigned, const TargetRegisterClass *>
   getRegForInlineAsmConstraint(const TargetRegisterInfo *TRI,
                                StringRef Constraint, MVT VT) const override;
