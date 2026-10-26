@@ -30,7 +30,7 @@ using namespace llvm;
 
 PI32V2FrameLowering::PI32V2FrameLowering(const PI32V2Subtarget &STI)
     : TargetFrameLowering(TargetFrameLowering::StackGrowsDown, Align(4), 0,
-                          Align(4)),
+                          Align(4), /*StackReal=*/false),
       STI(STI) {}
 
 bool PI32V2FrameLowering::hasFPImpl(const MachineFunction &MF) const {

@@ -93,6 +93,7 @@ public:
   // (JieLi's compiler makes .L_MergedGlobals too); 255: the reach of a byte
   // access's offset.
   bool addPreISel() override {
+    addPass(createPI32V2AlignAllocasPass());
     addPass(createPI32V2Div64PreparePass());
     if (getOptLevel() != CodeGenOptLevel::None)
       addPass(createGlobalMergePass(TM, 255, /*OnlyOptimizeForSize=*/false,

@@ -16,6 +16,7 @@ add_public_tablegen_target(PI32V2CommonTableGen)
 
 add_llvm_target(PI32V2CodeGen
   PI32V2AsmPrinter.cpp
+  PI32V2AlignAllocas.cpp
   PI32V2Div64Prepare.cpp
   PI32V2FrameLowering.cpp
   PI32V2IfBlocks.cpp
