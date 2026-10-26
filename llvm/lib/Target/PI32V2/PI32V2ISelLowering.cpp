@@ -511,17 +511,42 @@ SDValue PI32V2TargetLowering::LowerCall(CallLoweringInfo &CLI,
     CLI.IsTailCall = Ok;
   }
   bool Tail = CLI.IsTailCall;
+
+  // A struct passed by value (byval) is one pointer word, in the argument's
+  // register or stack slot, to a copy the caller makes in its own frame; the
+  // callee may write to it (pi32v2-isa docs/ABI.md, section 5.4). The copies
+  // come before the call sequence: a large one is a call to memcpy.
+  SmallVector<SDValue, 4> ByValCopies;
+  for (unsigned I = 0; I < CLI.Outs.size(); ++I) {
+    ISD::ArgFlagsTy Flags = CLI.Outs[I].Flags;
+    if (!Flags.isByVal())
+      continue;
+    unsigned Size = Flags.getByValSize();
+    Align A = Flags.getNonZeroByValAlign();
+    int FI = MF.getFrameInfo().CreateStackObject(std::max(Size, 1u), A,
+                                                 /*isSpillSlot=*/false);
+    SDValue Copy = DAG.getFrameIndex(FI, MVT::i32);
+    if (Size)
+      Chain = DAG.getMemcpy(Chain, DL, Copy, CLI.OutVals[I],
+                            DAG.getConstant(Size, DL, MVT::i32), A, A,
+                            /*isVol=*/false, /*AlwaysInline=*/false,
+                            /*CI=*/nullptr, /*OverrideTailCall=*/false,
+                            MachinePointerInfo::getFixedStack(MF, FI),
+                            MachinePointerInfo());
+    ByValCopies.push_back(Copy);
+  }
+
   if (!Tail)
     Chain = DAG.getCALLSEQ_START(Chain, Bytes, 0, DL);
 
   SmallVector<std::pair<unsigned, SDValue>, 4> Regs;
   SmallVector<SDValue, 8> Stores;
   SDValue SP;
-  for (unsigned I = 0; I < ArgLocs.size(); ++I) {
+  for (unsigned I = 0, NextCopy = 0; I < ArgLocs.size(); ++I) {
     CCValAssign &VA = ArgLocs[I];
     SDValue V = CLI.OutVals[I];
     if (CLI.Outs[I].Flags.isByVal())
-      report_fatal_error("PI32V2: byval arguments are not supported yet");
+      V = ByValCopies[NextCopy++];
     switch (VA.getLocInfo()) {
     case CCValAssign::SExt:
       V = DAG.getNode(ISD::SIGN_EXTEND, DL, VA.getLocVT(), V);
