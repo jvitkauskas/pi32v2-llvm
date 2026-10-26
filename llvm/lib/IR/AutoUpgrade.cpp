@@ -28,6 +28,7 @@
 #include "llvm/IR/Function.h"
 #include "llvm/IR/GlobalValue.h"
 #include "llvm/IR/IRBuilder.h"
+#include "llvm/IR/InlineAsm.h"
 #include "llvm/IR/InstVisitor.h"
 #include "llvm/IR/Instruction.h"
 #include "llvm/IR/IntrinsicInst.h"
@@ -1338,6 +1339,102 @@ static bool upgradeIntrinsicDeclWithDefaultArgs(Function *F, Function *&NewFn) {
   return true;
 }
 
+// JieLi's clang (LLVM 4) emits its __builtin_pi32v2_<name> as the target
+// intrinsic llvm.pi32v2.<name>, and its optimizer forms llvm.pi32v2.shfms64
+// from a 64-bit value shifted right to 32 bits; this LLVM has no pi32v2
+// intrinsics. Their calls are replaced by what clang emits for the builtins
+// (clang/lib/CodeGen/TargetBuiltins/PI32V2.cpp): the instruction in inline
+// assembly, or generic IR the back end selects into it again.
+static bool isPI32V2Intrinsic(StringRef Name, FunctionType *FTy) {
+  LLVMContext &C = FTy->getContext();
+  Type *Void = Type::getVoidTy(C), *I32 = Type::getInt32Ty(C),
+       *I64 = Type::getInt64Ty(C);
+  auto Is = [&](Type *Ret, ArrayRef<Type *> Params) {
+    return FTy == FunctionType::get(Ret, Params, false);
+  };
+  return StringSwitch<bool>(Name)
+      .Cases({"cli", "sti", "csync", "nop", "trigger", "lockset", "lockclr"},
+             Is(Void, {}))
+      .Cases({"flush", "flushinv", "iflush", "pfetch"}, Is(Void, {I32}))
+      .Cases({"clz", "cls", "popcount", "rev8", "zcmp"}, Is(I32, {I32}))
+      .Cases({"uextra", "sextra"}, Is(I32, {I32, I32, I32}))
+      .Case("shfms64", Is(I32, {I64, I32}))
+      .Default(false);
+}
+
+static Value *upgradePI32V2IntrinsicCall(StringRef Name, CallBase *CI,
+                                         IRBuilder<> &Builder) {
+  LLVMContext &C = CI->getContext();
+  Type *I32 = Builder.getInt32Ty(), *I64 = Builder.getInt64Ty();
+  auto Asm = [&](StringRef Text, StringRef Constraints, Type *Ret,
+                 ArrayRef<Value *> Args, bool SideEffects) -> Value * {
+    SmallVector<Type *, 2> Types;
+    for (Value *A : Args)
+      Types.push_back(A->getType());
+    InlineAsm *IA = InlineAsm::get(FunctionType::get(Ret, Types, false), Text,
+                                   Constraints, SideEffects);
+    return Builder.CreateCall(IA, Args);
+  };
+  Type *Void = Type::getVoidTy(C);
+  Value *X = CI->arg_size() ? CI->getArgOperand(0) : nullptr;
+  if (Name == "nop")
+    return Asm("nop", "", Void, {}, true);
+  if (Name == "cli" || Name == "sti" || Name == "csync" || Name == "trigger" ||
+      Name == "lockset" || Name == "lockclr")
+    return Asm(Name, "~{memory}", Void, {}, true);
+  if (Name == "pfetch")
+    return Asm("pfetch [$0]", "r", Void, {X}, true);
+  if (Name == "flush" || Name == "flushinv" || Name == "iflush")
+    return Asm((Name + " [$0]").str(), "r,~{memory}", Void, {X}, true);
+  if (Name == "zcmp")
+    return Asm("$0 = zcmp($1)", "=r,r", I32, {X}, false);
+  if (Name == "clz") // clz(0) = 32
+    return Builder.CreateBinaryIntrinsic(Intrinsic::ctlz, X,
+                                         Builder.getFalse());
+  if (Name == "cls") // the leading bits equal to bit 31
+    return Builder.CreateBinaryIntrinsic(
+        Intrinsic::ctlz, Builder.CreateXor(X, Builder.CreateAShr(X, 31)),
+        Builder.getFalse());
+  if (Name == "popcount")
+    return Builder.CreateUnaryIntrinsic(Intrinsic::ctpop, X);
+  if (Name == "rev8")
+    return Builder.CreateUnaryIntrinsic(Intrinsic::bswap, X);
+  if (Name == "uextra" || Name == "sextra") {
+    // the l bits from bit p (bits past 31 read as 0); sextra sign-extends a
+    // field that ends inside the word. p and l are constants (the builtins
+    // take them as such).
+    auto *PC = dyn_cast<ConstantInt>(CI->getArgOperand(1));
+    auto *LC = dyn_cast<ConstantInt>(CI->getArgOperand(2));
+    if (!PC || !LC)
+      report_fatal_error("llvm.pi32v2." + Name +
+                         ": the position and length must be constants");
+    uint64_t P = PC->getZExtValue(), L = LC->getZExtValue();
+    if (L == 0 || P >= 32)
+      return ConstantInt::get(I32, 0);
+    if (Name == "sextra" && P + L <= 32)
+      return Builder.CreateAShr(Builder.CreateShl(X, 32 - P - L), 32 - L);
+    Value *V = Builder.CreateLShr(X, P);
+    if (P + L < 32)
+      V = Builder.CreateAnd(V, (uint64_t(1) << L) - 1);
+    return V;
+  }
+  // shfms64(x, n): x shifted right arithmetically by n and clamped to the
+  // signed 32-bit range, what "r = rp >> n (s)" does (pi32v2-isa lsr.s.rpi,
+  // lsr.s.rpr): the count is n's low 8 bits, 64 and more shift everything out.
+  assert(Name == "shfms64");
+  Value *N = Builder.CreateZExt(
+      Builder.CreateBinaryIntrinsic(
+          Intrinsic::umin, Builder.CreateAnd(CI->getArgOperand(1), 255),
+          ConstantInt::get(I32, 63)),
+      I64);
+  Value *V = Builder.CreateAShr(X, N);
+  V = Builder.CreateBinaryIntrinsic(Intrinsic::smax, V,
+                                    ConstantInt::getSigned(I64, INT32_MIN));
+  V = Builder.CreateBinaryIntrinsic(Intrinsic::smin, V,
+                                    ConstantInt::get(I64, INT32_MAX));
+  return Builder.CreateTrunc(V, I32);
+}
+
 static bool upgradeIntrinsicFunction1(Function *F, Function *&NewFn,
                                       bool CanUpgradeDebugIntrinsicsToRecords) {
   assert(F && "Illegal to upgrade a non-existent Function.");
@@ -1815,6 +1912,11 @@ static bool upgradeIntrinsicFunction1(Function *F, Function *&NewFn,
     break;
 
   case 'p':
+    if (Name.starts_with("pi32v2.") &&
+        isPI32V2Intrinsic(Name.drop_front(7), F->getFunctionType())) {
+      NewFn = nullptr;
+      return true;
+    }
     if (Name.starts_with("ptr.annotation.") && F->arg_size() == 4) {
       rename(F);
       NewFn = Intrinsic::getOrInsertDeclaration(
@@ -5200,6 +5302,7 @@ void llvm::UpgradeIntrinsicCall(CallBase *CI, Function *NewFn) {
     bool IsARM = Name.consume_front("arm.");
     bool IsAMDGCN = Name.consume_front("amdgcn.");
     bool IsDbg = Name.consume_front("dbg.");
+    bool IsPI32V2 = Name.consume_front("pi32v2.");
     bool IsOldSplice =
         (Name.consume_front("experimental.vector.splice") ||
          Name.consume_front("vector.splice")) &&
@@ -5218,6 +5321,8 @@ void llvm::UpgradeIntrinsicCall(CallBase *CI, Function *NewFn) {
       Rep = upgradeARMIntrinsicCall(Name, CI, F, Builder);
     } else if (IsAMDGCN) {
       Rep = upgradeAMDGCNIntrinsicCall(Name, CI, F, Builder);
+    } else if (IsPI32V2) {
+      Rep = upgradePI32V2IntrinsicCall(Name, CI, Builder);
     } else if (IsDbg) {
       upgradeDbgIntrinsicToDbgRecord(Name, CI);
     } else if (IsOldSplice) {

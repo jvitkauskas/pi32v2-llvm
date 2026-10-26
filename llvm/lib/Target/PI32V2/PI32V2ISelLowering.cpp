@@ -582,6 +582,12 @@ SDValue PI32V2TargetLowering::LowerCall(CallLoweringInfo &CLI,
     Glue = Chain.getValue(1);
   }
 
+  // An llvm.* function that is not an intrinsic of this LLVM (one of JieLi's
+  // that AutoUpgrade does not know) has no definition anywhere.
+  if (auto *G = dyn_cast<GlobalAddressSDNode>(Callee))
+    if (G->getGlobal()->getName().starts_with("llvm."))
+      report_fatal_error("PI32V2: call to an unknown intrinsic, " +
+                         G->getGlobal()->getName());
   if (auto *G = dyn_cast<GlobalAddressSDNode>(Callee))
     Callee = DAG.getTargetGlobalAddress(G->getGlobal(), DL, MVT::i32,
                                         G->getOffset());
