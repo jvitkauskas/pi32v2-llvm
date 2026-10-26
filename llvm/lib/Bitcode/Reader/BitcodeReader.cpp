@@ -7142,6 +7142,52 @@ SyncScope::ID BitcodeReader::getDecodedSyncScopeID(unsigned Val) {
 // GVMaterializer implementation
 //===----------------------------------------------------------------------===//
 
+// Before LLVM 5, the inliner did not remap the locations in an inlined loop's
+// llvm.loop metadata (the loop's start and end): they stay in the scope of the
+// inlined function, which the verifier rejects ("!dbg attachment points at
+// wrong subprogram"). The loading of a lazily read module verifies debug info
+// before the function bodies are read, so such a module reaches LTO's verifier
+// with them. Give each such loop of F its own loop metadata whose locations are
+// the location of the (first) instruction that carries it, which is in F.
+static void upgradeInlinedLoopLocations(Function &F) {
+  DISubprogram *SP = F.getSubprogram();
+  if (!SP)
+    return;
+  auto InF = [&](const DILocation *L) {
+    DILocalScope *Scope = L->getInlinedAtScope();
+    return Scope && Scope->getSubprogram() == SP;
+  };
+  DenseMap<MDNode *, MDNode *> Done;
+  for (Instruction &I : instructions(F)) {
+    MDNode *Loop = I.getMetadata(LLVMContext::MD_loop);
+    if (!Loop || Loop->getNumOperands() == 0 || Loop->getOperand(0) != Loop)
+      continue;
+    bool Bad = false;
+    for (const MDOperand &Op : drop_begin(Loop->operands()))
+      if (auto *L = dyn_cast_or_null<DILocation>(Op.get()))
+        Bad |= !InF(L);
+    if (!Bad)
+      continue;
+    DILocation *Here = I.getDebugLoc().get();
+    if (Here && !InF(Here))
+      Here = nullptr;
+    MDNode *&New = Done[Loop];
+    if (!New) {
+      SmallVector<Metadata *, 4> Ops = {nullptr};
+      for (const MDOperand &Op : drop_begin(Loop->operands())) {
+        auto *L = dyn_cast_or_null<DILocation>(Op.get());
+        if (!L || InF(L))
+          Ops.push_back(Op.get());
+        else if (Here)
+          Ops.push_back(Here);
+      }
+      New = MDNode::getDistinct(F.getContext(), Ops);
+      New->replaceOperandWith(0, New);
+    }
+    I.setMetadata(LLVMContext::MD_loop, New);
+  }
+}
+
 Error BitcodeReader::materialize(GlobalValue *GV) {
   Function *F = dyn_cast<Function>(GV);
   // If it's not a function or is already material, ignore the request.
@@ -7179,6 +7225,8 @@ Error BitcodeReader::materialize(GlobalValue *GV) {
   // Finish fn->subprogram upgrade for materialized functions.
   if (DISubprogram *SP = MDLoader->lookupSubprogramForFunction(F))
     F->setSubprogram(SP);
+
+  upgradeInlinedLoopLocations(*F);
 
   // Check if the TBAA Metadata are valid, otherwise we will need to strip them.
   if (!MDLoader->isStrippingTBAA()) {
