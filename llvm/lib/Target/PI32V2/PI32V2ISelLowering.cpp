@@ -498,6 +498,11 @@ SDValue PI32V2TargetLowering::LowerCall(CallLoweringInfo &CLI,
   // compiler does it, when nothing of the caller's frame is still needed: the
   // arguments all in registers, a direct callee, no struct returned through
   // memory, and an ordinary caller (not variadic, not an interrupt handler).
+  if (CLI.IsTailCall && isPI32V2LargeProgram()) {
+    if (CLI.CB && CLI.CB->isMustTailCall())
+      report_fatal_error("PI32V2: no tail calls with -pi32v2-large-program");
+    CLI.IsTailCall = false;
+  }
   if (CLI.IsTailCall) {
     const Function &F = MF.getFunction();
     bool Ok = Bytes == 0 && !F.isVarArg() && !F.hasStructRetAttr() &&

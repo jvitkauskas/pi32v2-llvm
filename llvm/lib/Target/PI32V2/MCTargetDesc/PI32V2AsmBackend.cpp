@@ -17,11 +17,24 @@
 #include "llvm/MC/MCSubtargetInfo.h"
 #include "llvm/MC/MCSymbolELF.h"
 #include "llvm/MC/MCValue.h"
+#include "llvm/Support/CommandLine.h"
 #include "llvm/Support/MathExtras.h"
 #include "llvm/Support/raw_ostream.h"
 
 using namespace llvm;
 using namespace llvm::PI32V2;
+
+// What JieLi's compiler does with -mllvm -pi32v2-large-program=true (the AC79
+// SDK passes it, to the linker's LTO too): code in flash and in RAM is further
+// apart than call.l reaches (4 MiB), so a call the assembler leaves to the
+// linker is the 6-byte call.xl, and calls in tail position are calls.
+static cl::opt<bool> LargeProgram(
+    "pi32v2-large-program", cl::init(false),
+    cl::desc("Calls to symbols the assembler does not resolve are call.xl "
+             "(32-bit reach), and no call becomes a tail call (JieLi's "
+             "option of that name)"));
+
+bool llvm::isPI32V2LargeProgram() { return LargeProgram; }
 
 #define PI32V2_GEN_RELAX_TABLES
 #include "PI32V2RelaxGen.inc"
@@ -99,7 +112,7 @@ public:
         return true;
     return false;
   }
-  bool fixupNeedsRelaxationAdvanced(const MCFragment &, const MCFixup &Fixup,
+  bool fixupNeedsRelaxationAdvanced(const MCFragment &F, const MCFixup &Fixup,
                                     const MCValue &, uint64_t Value,
                                     bool Resolved) const override {
     unsigned Kind = Fixup.getKind();
@@ -109,7 +122,8 @@ public:
     if (!L.PCRel)
       return false;
     if (!Resolved)
-      return L.Reloc == 0;
+      return L.Reloc == 0 ||
+             (LargeProgram && F.getOpcode() == PI32V2::CALL_L);
     int64_t V = int64_t(Value) - L.Add;
     if (V % L.Scale)
       return false;
