@@ -52,6 +52,11 @@ struct PI32V2Op {
   bool Block; // a block's length or shape: given by the parser, not the line
 };
 
+struct PI32V2Fixed {
+  char Field;
+  int64_t Value;
+};
+
 struct PI32V2Template {
   const char *Text;
   unsigned Opcode;
@@ -66,6 +71,8 @@ struct PI32V2Template {
   uint32_t RejectStart;
   uint16_t NumRejects;
   char SameFrom, SameTo; // an alias where field SameTo is field SameFrom
+  uint32_t FixedStart;
+  uint8_t NumFixed;
   bool Branch;           // has a branch target
   bool Abs32;            // has a 32-bit constant that takes a symbol
   char Body;             // rep: the field of the body's length in bytes

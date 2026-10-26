@@ -20,6 +20,7 @@
 #include "MCTargetDesc/PI32V2MCTargetDesc.h"
 #include "PI32V2AsmParserTables.h"
 #include "TargetInfo/PI32V2TargetInfo.h"
+#include "llvm/ADT/APFloat.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/StringMap.h"
 #include "llvm/MC/MCContext.h"
@@ -34,6 +35,7 @@
 #include "llvm/MC/MCSymbol.h"
 #include "llvm/MC/TargetRegistry.h"
 #include "llvm/Support/Compiler.h"
+#include "llvm/Support/Regex.h"
 #include <algorithm>
 #include <optional>
 
@@ -74,7 +76,46 @@ static std::string canonical(StringRef Text) {
       Out += Q.str();
     }
   }
-  return Out;
+  // A pair's .l/.h is a complete word, usable wherever a GPR occurs.
+  std::string Words;
+  for (size_t I = 0; I < Out.size();) {
+    size_t E = I;
+    auto Reg = [&](unsigned &N) {
+      if (E >= Out.size() || Out[E++] != 'r')
+        return false;
+      size_t B = E;
+      while (E < Out.size() && isDigit(Out[E]))
+        ++E;
+      return E > B && !StringRef(Out).slice(B, E).getAsInteger(10, N);
+    };
+    unsigned H, L;
+    if ((I == 0 || !isIdentChar(Out[I - 1])) && Reg(H) &&
+        E < Out.size() && Out[E++] == '_' && Reg(L) &&
+        E + 1 < Out.size() && Out[E] == '.' &&
+        (Out[E + 1] == 'l' || Out[E + 1] == 'h') &&
+        (E + 2 == Out.size() || !isIdentChar(Out[E + 2])) &&
+        H == L + 1 && !(L & 1) && H <= 15) {
+      Words += "r" + std::to_string(Out[E + 1] == 'l' ? L : H);
+      I = E + 2;
+    } else {
+      Words += Out[I++];
+    }
+  }
+  // Decimal literals with an f suffix stand for single-precision bits.
+  static const Regex Float("(^|[^A-Za-z0-9_.$@])(-?[0-9]+\\.[0-9]*f)($|[^A-Za-z0-9_.$@])");
+  SmallVector<StringRef, 4> Match;
+  std::string Numbers;
+  StringRef Rest(Words);
+  while (Float.match(Rest, &Match)) {
+    StringRef Literal = Match[2];
+    size_t Begin = Literal.data() - Rest.data();
+    APFloat F(APFloat::IEEEsingle(), Literal.drop_back());
+    Numbers += Rest.take_front(Begin);
+    Numbers += std::to_string(F.bitcastToAPInt().getZExtValue());
+    Rest = Rest.drop_front(Begin + Literal.size());
+  }
+  Numbers += Rest;
+  return Numbers;
 }
 
 /// A dummy operand: the parser emits the instruction itself.
@@ -120,6 +161,8 @@ class PI32V2AsmParser : public MCTargetAsmParser {
   SmallVector<Block, 2> Blocks;
   std::optional<Block> Opening; // the block the pending instruction opens
   bool PendingPair = false;     // the previous instruction ended with '#'
+
+  bool parseLine(StringRef Line, SMLoc NameLoc);
 
   // Template matching.
   bool matchFrom(const PI32V2Template &T, StringRef Text, size_t TPos,
@@ -780,6 +823,10 @@ bool PI32V2AsmParser::readSlots(const PI32V2Template &T, StringRef Text,
     }
     }
   }
+  for (unsigned I = 0; I < T.NumFixed; ++I) {
+    const PI32V2Fixed &F = FixedFields[T.FixedStart + I];
+    Fields[F.Field - 'a'].Imm = F.Value;
+  }
   if (T.SameTo)
     Fields[T.SameTo - 'a'] = Fields[T.SameFrom - 'a'];
   return true;
@@ -864,8 +911,23 @@ bool PI32V2AsmParser::parseInstruction(ParseInstructionInfo &Info,
       Text += Raw[I++];
     }
   }
-  std::string Line = canonical(Text);
   Operands.push_back(std::make_unique<PI32V2Operand>(NameLoc));
+  size_t Hash = Text.find('#');
+  if (Hash != std::string::npos &&
+      !StringRef(Text).drop_front(Hash + 1).trim().empty()) {
+    if (parseLine(canonical(StringRef(Text).take_front(Hash + 1)), NameLoc))
+      return true;
+    unsigned Opcode = 0;
+    uint64_t ErrorInfo = 0;
+    if (matchAndEmitInstruction(NameLoc, Opcode, Operands,
+                               getParser().getStreamer(), ErrorInfo, false))
+      return true;
+    return parseLine(canonical(StringRef(Text).drop_front(Hash + 1)), NameLoc);
+  }
+  return parseLine(canonical(Text), NameLoc);
+}
+
+bool PI32V2AsmParser::parseLine(StringRef Line, SMLoc NameLoc) {
   MCContext &Ctx = getContext();
 
   if (Line == "}") {
