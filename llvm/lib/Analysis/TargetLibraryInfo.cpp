@@ -156,6 +156,13 @@ static void initializeLibCalls(TargetLibraryInfoImpl &TLI, const Triple &T,
     return;
   }
 
+  // JieLi's compiler (LLVM 4) never forms a call to calloc, and pi32v2
+  // firmware brings its own allocator: DSE would fold the malloc and memset of
+  // a zalloc into a calloc call, and a calloc that is that zalloc would call
+  // itself.
+  if (T.getArch() == Triple::pi32v2)
+    TLI.setUnavailable(LibFunc_calloc);
+
   // memset_pattern{4,8,16} is only available on iOS 3.0 and Mac OS X 10.5 and
   // later. All versions of watchOS support it.
   if (T.isMacOSX()) {
