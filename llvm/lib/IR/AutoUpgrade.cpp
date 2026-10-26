@@ -7305,6 +7305,14 @@ void llvm::UpgradeAttributes(AttrBuilder &B) {
       B.addAttribute(Attribute::NullPointerIsValid);
   }
 
+  // JieLi's clang (LLVM 4) writes its -fallow-pointer-null, which the AC79
+  // SDK builds with, as "allow-nullptr-deref": address 0 is memory on its
+  // chips.
+  if (B.contains("allow-nullptr-deref")) {
+    B.removeAttribute("allow-nullptr-deref");
+    B.addAttribute(Attribute::NullPointerIsValid);
+  }
+
   A = B.getAttribute("uniform-work-group-size");
   if (A.isValid()) {
     StringRef Val = A.getValueAsString();
