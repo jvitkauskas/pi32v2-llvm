@@ -55,6 +55,9 @@ public:
   ArrayRef<TargetInfo::GCCRegAlias> getGCCRegAliases() const override {
     return {};
   }
+  // A long long or double variable is word-aligned too, as JieLi's compiler
+  // has it: the stack is (pi32v2-isa docs/ABI.md).
+  bool allowsLargerPreferedTypeAlignment() const override { return false; }
   BuiltinVaListKind getBuiltinVaListKind() const override {
     return TargetInfo::VoidPtrBuiltinVaList;
   }
