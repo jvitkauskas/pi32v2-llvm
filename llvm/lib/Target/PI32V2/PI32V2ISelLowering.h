@@ -89,11 +89,29 @@ public:
                       const SmallVectorImpl<SDValue> &OutVals, const SDLoc &DL,
                       SelectionDAG &DAG) const override;
 
+  unsigned getNumRegisters(
+      LLVMContext &Context, EVT VT,
+      std::optional<MVT> RegisterVT = std::nullopt) const override;
+  bool splitValueIntoRegisterParts(
+      SelectionDAG &DAG, const SDLoc &DL, SDValue Val, SDValue *Parts,
+      unsigned NumParts, MVT PartVT,
+      std::optional<CallingConv::ID> CallConv) const override;
+
+  SDValue joinRegisterPartsIntoValue(
+      SelectionDAG &DAG, const SDLoc &DL, const SDValue *Parts,
+      unsigned NumParts, MVT PartVT, EVT ValueVT,
+      std::optional<CallingConv::ID> CallConv) const override;
+
+  ConstraintType getConstraintType(StringRef Constraint) const override;
+
   std::pair<unsigned, const TargetRegisterClass *>
   getRegForInlineAsmConstraint(const TargetRegisterInfo *TRI,
                                StringRef Constraint, MVT VT) const override;
 
 private:
+  SDValue lowerCopyToPair(SDValue Op, SelectionDAG &DAG) const;
+  void expandCopyFromPair(SDNode *N, SmallVectorImpl<SDValue> &Results,
+                          SelectionDAG &DAG) const;
   SDValue lowerAddress(SDValue Op, SelectionDAG &DAG) const;
   SDValue lowerSelectCC(SDValue Op, SelectionDAG &DAG) const;
 };

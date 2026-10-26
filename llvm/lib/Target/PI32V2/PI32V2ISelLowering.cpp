@@ -44,6 +44,10 @@ PI32V2TargetLowering::PI32V2TargetLowering(const TargetMachine &TM,
   if (STI.hasFPRev1())
     addRegisterClass(MVT::f32, &PI32V2::GPRRegClass);
   computeRegisterProperties(STI.getRegisterInfo());
+  // Inline asm uses a single pair register while ordinary i64 values remain
+  // split into words. Only copies at that boundary need custom legalization.
+  setOperationAction(ISD::CopyFromReg, MVT::i64, Custom);
+  setOperationAction(ISD::CopyToReg, MVT::i64, Custom);
 
   setStackPointerRegisterToSaveRestore(PI32V2::SP);
   setBooleanContents(ZeroOrOneBooleanContent);
@@ -142,6 +146,8 @@ PI32V2TargetLowering::PI32V2TargetLowering(const TargetMachine &TM,
 SDValue PI32V2TargetLowering::LowerOperation(SDValue Op,
                                              SelectionDAG &DAG) const {
   switch (Op.getOpcode()) {
+  case ISD::CopyToReg:
+    return lowerCopyToPair(Op, DAG);
   case ISD::GlobalAddress:
   case ISD::ExternalSymbol:
   case ISD::BlockAddress:
@@ -386,6 +392,10 @@ void PI32V2TargetLowering::ReplaceNodeResults(SDNode *N,
                                               SmallVectorImpl<SDValue> &Results,
                                               SelectionDAG &DAG) const {
   unsigned Opc = N->getOpcode();
+  if (Opc == ISD::CopyFromReg) {
+    expandCopyFromPair(N, Results, DAG);
+    return;
+  }
   bool Signed = Opc == ISD::SDIV || Opc == ISD::SREM;
   if (N->getValueType(0) != MVT::i64 ||
       (Opc != ISD::UDIV && Opc != ISD::SDIV && Opc != ISD::UREM &&
@@ -454,7 +464,7 @@ EVT PI32V2TargetLowering::getOptimalMemOpType(
 std::pair<const TargetRegisterClass *, uint8_t>
 PI32V2TargetLowering::findRepresentativeClass(const TargetRegisterInfo *TRI,
                                               MVT VT) const {
-  if (VT == MVT::i64)
+  if (VT == MVT::i64 || VT == MVT::Untyped)
     return {&PI32V2::GPRRegClass, 2};
   return TargetLowering::findRepresentativeClass(TRI, VT);
 }
@@ -677,12 +687,118 @@ SDValue PI32V2TargetLowering::LowerReturn(
   return DAG.getNode(PI32V2ISD::RET, DL, MVT::Other, Ops);
 }
 
+unsigned PI32V2TargetLowering::getNumRegisters(
+    LLVMContext &Context, EVT VT, std::optional<MVT> RegisterVT) const {
+  // An explicit register type comes from an inline-asm constraint. Each
+  // operand occupies one word or one pair, even when the value is narrower.
+  if (RegisterVT && VT.getSizeInBits() <= 64 &&
+      (*RegisterVT == MVT::i32 || *RegisterVT == MVT::f32 ||
+       *RegisterVT == MVT::i64))
+    return 1;
+  return TargetLowering::getNumRegisters(Context, VT, RegisterVT);
+}
+
+bool PI32V2TargetLowering::splitValueIntoRegisterParts(
+    SelectionDAG &DAG, const SDLoc &DL, SDValue Val, SDValue *Parts,
+    unsigned NumParts, MVT PartVT,
+    std::optional<CallingConv::ID> CallConv) const {
+  if (CallConv || PartVT != MVT::i64 || NumParts != 1)
+    return false;
+  EVT VT = Val.getValueType();
+  if (VT.isFloatingPoint())
+    Val = DAG.getNode(ISD::BITCAST, DL,
+                      MVT::getIntegerVT(VT.getSizeInBits()), Val);
+  Parts[0] = DAG.getZExtOrTrunc(Val, DL, MVT::i64);
+  return true;
+}
+
+SDValue PI32V2TargetLowering::joinRegisterPartsIntoValue(
+    SelectionDAG &DAG, const SDLoc &DL, const SDValue *Parts, unsigned NumParts,
+    MVT PartVT, EVT ValueVT, std::optional<CallingConv::ID> CallConv) const {
+  // A word constraint on a 64-bit integer truncates inputs and zero-extends
+  // outputs, as JieLi's w/W constraints do.
+  if (!CallConv && NumParts == 1 && PartVT == MVT::i32 &&
+      ValueVT == MVT::i64)
+    return DAG.getNode(ISD::ZERO_EXTEND, DL, MVT::i64, Parts[0]);
+  return SDValue();
+}
+
+// Copies at the inline-asm boundary carry an opaque pair through the DAG.
+// Its words are legal i32 values; i64 arithmetic still uses its usual expansion.
+SDValue PI32V2TargetLowering::lowerCopyToPair(SDValue Op,
+                                            SelectionDAG &DAG) const {
+  SDLoc DL(Op);
+  SDValue Value = Op.getOperand(2);
+  auto [Lo, Hi] = DAG.SplitScalar(Value, DL, MVT::i32, MVT::i32);
+  SDValue Pair(DAG.getMachineNode(
+                   TargetOpcode::REG_SEQUENCE, DL, MVT::Untyped,
+                   {DAG.getTargetConstant(PI32V2::GPRPairRegClassID, DL, MVT::i32),
+                    Lo, DAG.getTargetConstant(PI32V2::sub_lo, DL, MVT::i32),
+                    Hi, DAG.getTargetConstant(PI32V2::sub_hi, DL, MVT::i32)}),
+               0);
+  Register Reg = cast<RegisterSDNode>(Op.getOperand(1))->getReg();
+  if (Op->getNumValues() == 2) {
+    SDValue Glue = Op->getNumOperands() == 4 ? Op.getOperand(3) : SDValue();
+    return DAG.getCopyToReg(Op.getOperand(0), DL, Reg, Pair, Glue);
+  }
+  return DAG.getCopyToReg(Op.getOperand(0), DL, Reg, Pair);
+}
+
+void PI32V2TargetLowering::expandCopyFromPair(
+    SDNode *N, SmallVectorImpl<SDValue> &Results, SelectionDAG &DAG) const {
+  SDLoc DL(N);
+  Register Reg = cast<RegisterSDNode>(N->getOperand(1))->getReg();
+  SDValue Pair;
+  if (N->getNumValues() == 3) {
+    SDValue Glue = N->getNumOperands() == 3 ? N->getOperand(2) : SDValue();
+    Pair = DAG.getCopyFromReg(N->getOperand(0), DL, Reg, MVT::Untyped, Glue);
+  } else {
+    Pair = DAG.getCopyFromReg(N->getOperand(0), DL, Reg, MVT::Untyped);
+  }
+  SDValue Lo = DAG.getTargetExtractSubreg(PI32V2::sub_lo, DL, MVT::i32, Pair);
+  SDValue Hi = DAG.getTargetExtractSubreg(PI32V2::sub_hi, DL, MVT::i32, Pair);
+  Results.push_back(DAG.getNode(ISD::BUILD_PAIR, DL, MVT::i64, Lo, Hi));
+  Results.push_back(Pair.getValue(1));
+  if (N->getNumValues() == 3)
+    Results.push_back(Pair.getValue(2));
+}
+
+TargetLowering::ConstraintType
+PI32V2TargetLowering::getConstraintType(StringRef Constraint) const {
+  if (Constraint.size() == 1) {
+    switch (Constraint[0]) {
+    case 'w':
+    case 'W':
+    case 'd':
+    case 'D':
+      return C_RegisterClass;
+    }
+  }
+  return TargetLowering::getConstraintType(Constraint);
+}
+
 std::pair<unsigned, const TargetRegisterClass *>
 PI32V2TargetLowering::getRegForInlineAsmConstraint(const TargetRegisterInfo *TRI,
                                                    StringRef Constraint,
                                                    MVT VT) const {
-  if (Constraint.size() == 1 && Constraint[0] == 'r')
-    return std::make_pair(0U, &PI32V2::GPRRegClass);
+  // JieLi's word constraints select a bank of eight GPRs; its doubleword
+  // constraints select the four aligned pairs in that bank. The generic
+  // register constraint chooses a word or pair according to the value type.
+  if (Constraint.size() == 1) {
+    switch (Constraint[0]) {
+    case 'r':
+      return {0U, VT.getSizeInBits() == 64 ? &PI32V2::GPRPairRegClass
+                                         : &PI32V2::GPRRegClass};
+    case 'w':
+      return {0U, &PI32V2::GPRLoRegClass};
+    case 'W':
+      return {0U, &PI32V2::GPRHiRegClass};
+    case 'd':
+      return {0U, &PI32V2::GPRPairLoRegClass};
+    case 'D':
+      return {0U, &PI32V2::GPRPairHiRegClass};
+    }
+  }
   return TargetLowering::getRegForInlineAsmConstraint(TRI, Constraint, VT);
 }
 

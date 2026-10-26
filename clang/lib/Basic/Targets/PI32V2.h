@@ -64,7 +64,8 @@ public:
   llvm::SmallVector<Builtin::InfosShard> getTargetBuiltins() const override;
   bool validateAsmConstraint(const char *&Name,
                              TargetInfo::ConstraintInfo &Info) const override {
-    if (*Name == 'r') {
+    if (*Name == 'r' || *Name == 'w' || *Name == 'W' ||
+        *Name == 'd' || *Name == 'D') {
       Info.setAllowsRegister();
       return true;
     }
