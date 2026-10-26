@@ -60,6 +60,10 @@ def GPRHi : RegisterClass<"PI32V2", [i32], 32, (sequence "R%u", 8, 15)>;
 def GPRPair : RegisterClass<"PI32V2", [i64], 64,
                             (add R1_R0, R3_R2, R5_R4, R7_R6, R9_R8, R11_R10,
                                  R13_R12, R15_R14)>;
+def GPRPairLo : RegisterClass<"PI32V2", [i64], 64,
+                              (add R1_R0, R3_R2, R5_R4, R7_R6)>;
+def GPRPairHi : RegisterClass<"PI32V2", [i64], 64,
+                              (add R9_R8, R11_R10, R13_R12, R15_R14)>;
 def SR : RegisterClass<"PI32V2", [i32], 32,
                        (add RETI, RETE, RETX, RETS, SR4, PSR, CNUM, USPN, SSPN,
                             ICFGN, ICFGS, ICFG, USP, SSP, SP, PC)> {
