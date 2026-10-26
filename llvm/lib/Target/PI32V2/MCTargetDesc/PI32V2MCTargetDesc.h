@@ -29,6 +29,10 @@ MCAsmBackend *createPI32V2AsmBackend(const Target &T,
                                      const MCRegisterInfo &MRI,
                                      const MCTargetOptions &Options);
 std::unique_ptr<MCObjectTargetWriter> createPI32V2ELFObjectWriter();
+
+// JieLi's -pi32v2-large-program: a call the assembler cannot resolve is the
+// 6-byte call.xl (any distance), and there are no tail calls.
+bool isPI32V2LargeProgram();
 } // namespace llvm
 
 #define GET_REGINFO_ENUM
