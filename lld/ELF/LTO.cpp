@@ -64,9 +64,11 @@ static lto::Config createConfig(Ctx &ctx) {
 
   // Always emit a section per function/datum with LTO. PI32V2: one .text for
   // the functions, so that the assembler can use the 2-byte call between them
-  // (the target puts the ones that may be dead in sections of their own).
+  // (the target puts the ones that may be dead in sections of their own), and
+  // the data in .data, .bss and .rodata as JieLi's LTO has it: the AC79 SDK's
+  // linker scripts place *(.data) and *(.bss), not their per-variable sections.
   c.Options.FunctionSections = ctx.arg.emachine != EM_PI32V2;
-  c.Options.DataSections = true;
+  c.Options.DataSections = ctx.arg.emachine != EM_PI32V2;
 
   // Check if basic block sections must be used.
   // Allowed values for --lto-basic-block-sections are "all",
