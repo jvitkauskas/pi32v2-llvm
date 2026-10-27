@@ -1445,6 +1445,7 @@ private:
     int SingleBBBonusPercent = 50;
     int VectorBonusPercent = TTI.getInlinerVectorBonusPercent();
     Threshold += TTI.adjustInliningThreshold(&CandidateCall);
+    Threshold = std::max(Threshold, 0);
     Threshold *= TTI.getInliningThresholdMultiplier();
     SingleBBBonus = Threshold * SingleBBBonusPercent / 100;
     VectorBonus = Threshold * VectorBonusPercent / 100;
@@ -2182,6 +2183,9 @@ void InlineCostCallAnalyzer::updateThreshold(CallBase &Call, Function &Callee) {
   }
 
   Threshold += TTI.adjustInliningThreshold(&Call);
+  // A target's adjustment may be negative (PI32V2's, optimizing for size); an
+  // explicit low -inline-threshold must not go below 0.
+  Threshold = std::max(Threshold, 0);
 
   // Finally, take the target-specific inlining threshold multiplier into
   // account.
