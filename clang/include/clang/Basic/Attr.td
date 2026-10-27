@@ -2237,6 +2237,16 @@ def PI32V2Interrupt : InheritableAttr, TargetSpecificAttr<TargetPI32V2> {
   let Documentation = [Undocumented];
 }
 
+// JieLi's: inline at every call whose arguments are all constants (the AC79
+// SDK's sources; LLVM's inliner reads "always-inline-when-const-args").
+def PI32V2AlwaysInlineWhenConstArgs : InheritableAttr,
+                                      TargetSpecificAttr<TargetPI32V2> {
+  let Spellings = [GCC<"always_inline_when_const_args">];
+  let Subjects = SubjectList<[Function]>;
+  let SimpleHandler = 1;
+  let Documentation = [Undocumented];
+}
+
 def Mips16 : InheritableAttr, TargetSpecificAttr<TargetMips32> {
   let Spellings = [GCC<"mips16">];
   let Subjects = SubjectList<[Function], ErrorDiag>;

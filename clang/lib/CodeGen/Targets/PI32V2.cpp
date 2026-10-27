@@ -67,7 +67,8 @@ public:
   PI32V2TargetCodeGenInfo(CodeGen::CodeGenTypes &CGT)
       : TargetCodeGenInfo(std::make_unique<PI32V2ABIInfo>(CGT)) {}
 
-  // __attribute__((interrupt)): the backend's "interrupt" function attribute.
+  // __attribute__((interrupt)): the backend's "interrupt" function attribute;
+  // always_inline_when_const_args: the inliner's.
   void setTargetAttributes(const Decl *D, llvm::GlobalValue *GV,
                            CodeGen::CodeGenModule &CGM) const override {
     if (GV->isDeclaration())
@@ -75,6 +76,10 @@ public:
     const auto *FD = dyn_cast_or_null<FunctionDecl>(D);
     if (FD && FD->hasAttr<PI32V2InterruptAttr>())
       cast<llvm::Function>(GV)->addFnAttr("interrupt");
+    // __attribute__((always_inline_when_const_args)), as JieLi's clang writes
+    // it (the inliner honours it, llvm/lib/Analysis/InlineCost.cpp).
+    if (FD && FD->hasAttr<PI32V2AlwaysInlineWhenConstArgsAttr>())
+      cast<llvm::Function>(GV)->addFnAttr("always-inline-when-const-args");
   }
 };
 } // namespace
