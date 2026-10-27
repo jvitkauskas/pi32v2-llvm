@@ -11,6 +11,12 @@
 // gets room for its alignment and its address is rounded up in that room, as
 // JieLi's compiler does it (r0 = sp + 15; r0 = r0 & 0xFFFFFFF0).
 //
+// A local of a word or more that needs less is word-aligned. JieLi's SDK
+// builds packed (align 1) byte buffers and hands them on as ints: the
+// controller's HCI events are posted to a task queue word by word, and a
+// misaligned word load resets the chip. JieLi's frame layout happens to put
+// them on a word; LLVM's puts the padding elsewhere, so it is not left to luck.
+//
 //===----------------------------------------------------------------------===//
 
 #include "PI32V2.h"
@@ -45,10 +51,18 @@ bool PI32V2AlignAllocas::runOnFunction(Function &F) {
   const DataLayout &DL = F.getDataLayout();
   const Align Stack(4);
   SmallVector<AllocaInst *, 4> Work;
+  bool Changed = false;
   for (Instruction &I : instructions(F))
-    if (auto *AI = dyn_cast<AllocaInst>(&I))
-      if (AI->getAlign() > Stack && AI->getAllocationSize(DL))
+    if (auto *AI = dyn_cast<AllocaInst>(&I)) {
+      std::optional<TypeSize> Size = AI->getAllocationSize(DL);
+      if (AI->getAlign() > Stack && Size)
         Work.push_back(AI);
+      else if (AI->getAlign() < Stack &&
+               (!Size || Size->getKnownMinValue() >= Stack.value())) {
+        AI->setAlignment(Stack);
+        Changed = true;
+      }
+    }
   for (AllocaInst *AI : Work) {
     uint64_t Size = AI->getAllocationSize(DL)->getFixedValue();
     uint64_t A = AI->getAlign().value();
@@ -70,5 +84,5 @@ bool PI32V2AlignAllocas::runOnFunction(Function &F) {
     AI->replaceAllUsesWith(P);
     AI->eraseFromParent();
   }
-  return !Work.empty();
+  return Changed || !Work.empty();
 }

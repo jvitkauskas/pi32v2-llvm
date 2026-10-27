@@ -36,11 +36,12 @@ define i32 @loads(ptr %p, i32 %v) nounwind {
 
 declare void @escape(ptr)
 ; As JieLi's compiler (docs/ABI.md section 6.1): rets pushed, eight bytes for
-; a five-byte array, its address, the call, the pop into pc.
+; a five-byte array, its address, the call, the pop into pc. JieLi's puts the
+; array at sp+3; a local of a word or more is word-aligned here (align-allocas.ll).
 ; CHECK-LABEL: frame:
 ; CHECK:      [--sp] = rets
 ; CHECK-NEXT: sp += -8
-; CHECK-NEXT: r0 = sp + 3
+; CHECK-NEXT: r0 = sp + 0
 ; CHECK-NEXT: call escape
 ; CHECK-NEXT: sp += 8
 ; CHECK-NEXT: pc = [sp++]
