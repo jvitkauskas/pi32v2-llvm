@@ -42,6 +42,9 @@ public:
     WCharType = SignedInt;
     MaxAtomicPromoteWidth = 32;
     MaxAtomicInlineWidth = 32; // as JieLi's compiler (read-modify-write ones are __sync_* calls)
+    // The assembly has no dialects, and { } open and close its if- and rep-blocks: JieLi's compiler passes
+    // them (and |) into the inline-assembly string unchanged, nested ones included.
+    NoAsmVariants = true;
   }
 
   void getTargetDefines(const LangOptions &Opts,

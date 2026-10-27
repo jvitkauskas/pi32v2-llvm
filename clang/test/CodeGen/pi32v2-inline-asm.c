@@ -30,3 +30,10 @@ long long high_pair(long long x) {
   asm("%0 = %1" : "=D"(y) : "D"(x));
   return y;
 }
+
+// The assembly has no dialects: { | } reach the assembler as they are written (blocks nest), and only $ is doubled.
+// CHECK-LABEL: @blocks(
+// CHECK: call {{.*}} asm sideeffect "rep $0 {\0A\09iff($0 > $1) { $0 = $1 }\0A\09}\0A\09 a|b $$"
+void blocks(int n, int m) {
+  asm volatile("rep %0 {\n\tiff(%0 > %1) { %0 = %1 }\n\t}\n\t a|b $" : "+r"(n) : "r"(m));
+}
