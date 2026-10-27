@@ -139,6 +139,24 @@ bool PI32V2RegisterInfo::eliminateFrameIndex(MachineBasicBlock::iterator II,
       continue;
     Register Val = MI.getOperand(0).getReg();
     bool Kill = F.Store && MI.getOperand(0).isKill();
+    // With the frame base, [r7+n] itself when n is in reach (9 bits of
+    // steps): no register for the address.
+    if (FP && Offset % F.Scale == 0 && Offset >= -256 * F.Scale &&
+        Offset <= 255 * F.Scale) {
+      if (F.Store)
+        BuildMI(MBB, II, DL, TII.get(F.RegOp))
+            .addReg(PI32V2::R7)
+            .addImm(Offset)
+            .addReg(Val, getKillRegState(Kill))
+            .setMemRefs(MI.memoperands());
+      else
+        BuildMI(MBB, II, DL, TII.get(F.RegOp), Val)
+            .addReg(PI32V2::R7)
+            .addImm(Offset)
+            .setMemRefs(MI.memoperands());
+      MI.eraseFromParent();
+      return true;
+    }
     if (!FP && Offset >= 0 && Offset <= F.Max && Offset % F.Scale == 0) {
       if (F.Store)
         BuildMI(MBB, II, DL, TII.get(F.SPOp))
