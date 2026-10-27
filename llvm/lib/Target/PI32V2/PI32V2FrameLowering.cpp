@@ -48,12 +48,13 @@ void PI32V2FrameLowering::determineCalleeSaves(MachineFunction &MF,
     SavedRegs.set(PI32V2::R7);
 }
 
-// A frame larger than the sp forms reach may need a register for a slot's
-// address when none is free: a slot near sp to spill one to.
+// A frame larger than the sp forms reach, or one addressed from the frame
+// base r7 beyond what [r7+n] reaches, may need a register for a slot's
+// address when none is free: a slot near the base to spill one to.
 void PI32V2FrameLowering::processFunctionBeforeFrameFinalized(
     MachineFunction &MF, RegScavenger *RS) const {
   MachineFrameInfo &MFI = MF.getFrameInfo();
-  if (RS && MFI.estimateStackSize(MF) > 4000)
+  if (RS && (MFI.estimateStackSize(MF) > (hasFP(MF) ? 200 : 4000)))
     RS->addScavengingFrameIndex(
         MFI.CreateSpillStackObject(4, Align(4)));
 }
