@@ -3254,6 +3254,18 @@ std::optional<InlineResult> llvm::getAttributeBasedInliningDecision(
   if (Callee->hasFnAttribute("loader-replaceable"))
     return InlineResult::failure("loader replaceable function attribute");
 
+  // JieLi's always_inline_when_const_args (the AC79 SDK's sources and bitcode,
+  // where a switch on such an argument names symbols a configuration does
+  // not define): always inlined where every argument is a constant, a
+  // global's address too.
+  if (Callee->hasFnAttribute("always-inline-when-const-args") &&
+      all_of(Call.args(), [](const Use &A) { return isa<Constant>(A); })) {
+    auto IsViable = isInlineViable(*Callee);
+    if (IsViable.isSuccess())
+      return InlineResult::success();
+    return InlineResult::failure(IsViable.getFailureReason());
+  }
+
   return std::nullopt;
 }
 
