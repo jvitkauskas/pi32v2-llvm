@@ -2079,6 +2079,12 @@ defm addrsig : BoolFOption<"addrsig",
 defm blocks : OptInCC1FFlag<"blocks", "Enable the 'blocks' language feature",
                             "", "", [ClangOption, CLOption]>;
 def fbootclasspath_EQ : Joined<["-"], "fbootclasspath=">, Group<f_Group>;
+defm prefer_gnu_section : BoolFOption<"prefer-gnu-section",
+  LangOpts<"PreferGnuSection">, DefaultFalse,
+  PosFlag<SetTrue, [], [ClangOption, CC1Option],
+          "A function's own __attribute__((section)) takes precedence over"
+          " '#pragma code_seg' (as JieLi's compiler)">,
+  NegFlag<SetFalse>>;
 defm borland_extensions : BoolFOption<"borland-extensions",
   LangOpts<"Borland">, DefaultFalse,
   PosFlag<SetTrue, [], [ClangOption, CC1Option],

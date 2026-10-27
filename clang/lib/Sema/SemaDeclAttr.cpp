@@ -3540,13 +3540,27 @@ static void handleSectionAttr(Sema &S, Decl *D, const ParsedAttr &AL) {
   if (!S.checkSectionName(LiteralLoc, Str))
     return;
 
+  // -fprefer-gnu-section: the section attribute written on a function takes
+  // the place of the one '#pragma code_seg' gave it, which is otherwise
+  // kept (with a warning). Only the pragma's implicit attribute is there yet:
+  // attributes of earlier declarations are merged after this one.
+  int ExtraFlags = 0;
+  if (S.getLangOpts().PreferGnuSection && isa<FunctionDecl>(D))
+    if (const auto *Existing = D->getAttr<SectionAttr>())
+      if (Existing->isImplicit() && Existing->getName() != Str) {
+        D->dropAttr<SectionAttr>();
+        // The pragma may have claimed this section name for code already.
+        ExtraFlags = ASTContext::PSF_Implicit;
+      }
+
   SectionAttr *NewAttr = S.mergeSectionAttr(D, AL, Str);
   if (NewAttr) {
     D->addAttr(NewAttr);
     if (isa<FunctionDecl, FunctionTemplateDecl, ObjCMethodDecl,
             ObjCPropertyDecl>(D))
       S.UnifySection(NewAttr->getName(),
-                     ASTContext::PSF_Execute | ASTContext::PSF_Read,
+                     ASTContext::PSF_Execute | ASTContext::PSF_Read |
+                         ExtraFlags,
                      cast<NamedDecl>(D));
   }
 }
