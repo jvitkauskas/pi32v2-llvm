@@ -7,6 +7,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "PI32V2TargetMachine.h"
+#include "PI32V2FreezeReturns.h"
 #include "PI32V2TargetTransformInfo.h"
 #include "PI32V2.h"
 #include "PI32V2MachineFunctionInfo.h"
@@ -16,6 +17,7 @@
 #include "llvm/CodeGen/TargetLoweringObjectFileImpl.h"
 #include "llvm/CodeGen/TargetPassConfig.h"
 #include "llvm/MC/TargetRegistry.h"
+#include "llvm/Passes/PassBuilder.h"
 #include "llvm/PassRegistry.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Compiler.h"
@@ -118,6 +120,21 @@ public:
   }
 };
 } // namespace
+
+// A function that falls off its end returns a frozen undef, not one the
+// optimizer may take for undefined behaviour (PI32V2FreezeReturns.cpp): after
+// the early simplification (SROA has made the undef), and at the start of the
+// full LTO pipeline (JieLi's bitcode has it already), before IPSCCP.
+void PI32V2TargetMachine::registerPassBuilderCallbacks(PassBuilder &PB) {
+  PB.registerPipelineEarlySimplificationEPCallback(
+      [](ModulePassManager &MPM, OptimizationLevel, ThinOrFullLTOPhase) {
+        MPM.addPass(createModuleToFunctionPassAdaptor(PI32V2FreezeReturnsPass()));
+      });
+  PB.registerFullLinkTimeOptimizationEarlyEPCallback(
+      [](ModulePassManager &MPM, OptimizationLevel) {
+        MPM.addPass(createModuleToFunctionPassAdaptor(PI32V2FreezeReturnsPass()));
+      });
+}
 
 TargetPassConfig *PI32V2TargetMachine::createPassConfig(PassManagerBase &PM) {
   return new PI32V2PassConfig(*this, PM);

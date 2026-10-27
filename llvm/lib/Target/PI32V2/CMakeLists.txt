@@ -18,6 +18,7 @@ add_llvm_target(PI32V2CodeGen
   PI32V2AsmPrinter.cpp
   PI32V2AlignAllocas.cpp
   PI32V2Div64Prepare.cpp
+  PI32V2FreezeReturns.cpp
   PI32V2FrameLowering.cpp
   PI32V2IfBlocks.cpp
   PI32V2InstrInfo.cpp
@@ -36,6 +37,7 @@ add_llvm_target(PI32V2CodeGen
   CodeGenTypes
   Core
   MC
+  Passes
   SelectionDAG
   Support
   Target
