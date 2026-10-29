@@ -389,6 +389,11 @@ def simm12rmw : ImmLeaf<i32, [{ return isInt<12>(Imm); }]>;
 def modimm_wide : ImmLeaf<i32, [{
   return PI32V2::modImmRawFor(uint32_t(Imm)).has_value() && !isUInt<8>(Imm);
 }]>;
+// a store of a value used at most twice (a 4-byte store of a 4-byte li
+// constant: with three or more the register is cheaper: 4 + 2 each)
+def store_few : PatFrag<(ops node:$v, node:$p), (store node:$v, node:$p), [{
+  return cast<StoreSDNode>(N)->getValue()->use_size() <= 2;
+}]>;
 // a store whose value has no other use
 def store_once : PatFrag<(ops node:$v, node:$p), (store node:$v, node:$p), [{
   return cast<StoreSDNode>(N)->getValue().hasOneUse();
@@ -431,7 +436,7 @@ defm : RMWImm<and, nmodimm, RMW_AND_NMODIMM>;
 defm : RMWImm<add, simm12rmw, RMW_ADD_S12>;
 defm : RMWImm<add, modimm, RMW_ADD_MODIMM>;
 // (a small constant is a 2-byte li, kept in a register for the next store)
-def : Pat<(store (i32 modimm_wide:$m), (AddrRMW i32:$b, i32:$n)),
+def : Pat<(store_few (i32 modimm_wide:$m), (AddrRMW i32:$b, i32:$n)),
           (ST_W_MODIMM GPR:$b, $n, imm:$m)>;
 // (a small constant stored once needs no register for the 2-byte li)
 def : Pat<(store_once (i32 modimm:$m), (AddrRMW i32:$b, i32:$n)),

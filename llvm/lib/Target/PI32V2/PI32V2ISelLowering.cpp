@@ -502,10 +502,22 @@ EVT PI32V2TargetLowering::getOptimalMemOpType(
   if (A >= 2 && Op.size() >= 2)
     return MVT::i16;
   return MVT::i8;
+// CodeGenPrepare asks this one: an address it cannot fold stays a pointer
+// computed once and kept in a register (a struct field 2 KB away, hoisted out
+// of a loop: hundreds of live pointers in a big function). A far offset from
+// a base register is an addi next to the access, so it counts as folded.
 }
 
 std::pair<const TargetRegisterClass *, uint8_t>
 PI32V2TargetLowering::findRepresentativeClass(const TargetRegisterInfo *TRI,
+  if (isExactAddressingMode(DL, AM, Ty))
+    return true;
+  return !AM.BaseGV && AM.Scale == 0 && isInt<17>(AM.BaseOffs);
+}
+
+bool PI32V2TargetLowering::isExactAddressingMode(const DataLayout &DL,
+                                                 const AddrMode &AM,
+                                                 Type *Ty) const {
                                               MVT VT) const {
   if (VT == MVT::i64 || VT == MVT::Untyped)
     return {&PI32V2::GPRRegClass, 2};
