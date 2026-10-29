@@ -12,12 +12,12 @@
 #include "PI32V2InstrInfo.h"
 #include "PI32V2Subtarget.h"
 #include "llvm/CodeGen/LiveRegUnits.h"
+#include "llvm/CodeGen/MachineFrameInfo.h"
 #include "llvm/CodeGen/MachineFunctionPass.h"
 #include "llvm/CodeGen/MachineRegisterInfo.h"
 #include "llvm/MC/MCInst.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/MathExtras.h"
-#include <tuple>
 
 using namespace llvm;
 
@@ -31,11 +31,120 @@ static cl::opt<bool> EnableGlobalRecolor(
     "pi32v2-global-recolor", cl::Hidden, cl::init(true),
     cl::desc("Swap PI32V2 callee-saved register assignments for size"));
 
+static cl::opt<bool> EnablePairRecolor(
+    "pi32v2-pair-recolor", cl::Hidden, cl::init(true),
+    cl::desc("Swap PI32V2 register pairs together with their scalar halves"));
+
+static cl::opt<bool> EnablePseudoCosting(
+    "pi32v2-recolor-pseudos", cl::Hidden, cl::init(true),
+    cl::desc("Cost PI32V2 pseudo expansions during register recoloring"));
+
+static cl::opt<bool> EnableCrossBlockRecolor(
+    "pi32v2-crossblock-recolor", cl::Hidden, cl::init(true),
+    cl::desc("Recolor connected PI32V2 physical live ranges without copies"));
+
+static unsigned postOpcode(unsigned Opc, unsigned &Skip) {
+  Skip = 1;
+  switch (Opc) {
+  case PI32V2::LDW_POST: return PI32V2::LD_W_PIN_L;
+  case PI32V2::LDHU_POST: return PI32V2::LD_HU_PIN_L;
+  case PI32V2::LDHS_POST: return PI32V2::LD_HS_PIN_L;
+  case PI32V2::LDBU_POST: return PI32V2::LD_BU_PIN_L;
+  case PI32V2::LDBS_POST: return PI32V2::LD_BS_PIN_L;
+  }
+  Skip = 0;
+  switch (Opc) {
+  case PI32V2::STW_POST: return PI32V2::ST_W_PIN_L;
+  case PI32V2::STH_POST: return PI32V2::ST_H_PIN_L;
+  case PI32V2::STB_POST: return PI32V2::ST_B_PIN_L;
+  }
+  return 0;
+}
+
+static bool isSelect(unsigned Opc) {
+  switch (Opc) {
+  case PI32V2::SELECT_CC: case PI32V2::SELECT_CC_RI:
+  case PI32V2::SELECT_CC_RRI: case PI32V2::SELECT_CC_RII:
+  case PI32V2::SELECT_AND: case PI32V2::SELECT_ANDI:
+    return true;
+  default:
+    return false;
+  }
+}
+
+// Before PEI, do not assume a particular stack offset. Only allow accesses
+// proved to fit their SP form for every possible layout: its size does not
+// depend on the value register. Include room for all saves, varargs and the
+// emergency slot. Large frames and frame-pointer addressing stay excluded.
+static bool isDirectSPAccess(const MachineInstr &MI,
+                             const PI32V2RegisterInfo &TRI) {
+  unsigned Scale, Max;
+  switch (MI.getOpcode()) {
+  case PI32V2::LDW_FI: case PI32V2::STW_FI:
+    Scale = 4; Max = 4092; break;
+  case PI32V2::LDHU_FI: case PI32V2::LDHS_FI: case PI32V2::STH_FI:
+    Scale = 2; Max = 4094; break;
+  case PI32V2::LDBU_FI: case PI32V2::LDBS_FI: case PI32V2::STB_FI:
+    Scale = 1; Max = 4095; break;
+  default:
+    return false;
+  }
+  const MachineFunction &MF = *MI.getMF();
+  const MachineFrameInfo &MFI = MF.getFrameInfo();
+  if (TRI.getFrameRegister(MF) != PI32V2::SP)
+    return false;
+  int FI = MI.getOperand(1).getIndex();
+  int64_t Disp = MI.getOperand(2).getImm();
+  if (Disp < 0 || Disp % Scale || MFI.getObjectAlign(FI) < Align(Scale))
+    return false;
+  int64_t Extra = 0;
+  if (MFI.isFixedObjectIndex(FI)) {
+    Extra = MFI.getObjectOffset(FI);
+    if (Extra < 0 || Extra % Scale)
+      return false;
+  } else if (Disp > MFI.getObjectSize(FI))
+    return false;
+  return MFI.estimateStackSize(MF) + 128 + Extra + Disp <= Max;
+}
+
+static bool isCostedPseudo(const MachineInstr &MI,
+                           const PI32V2RegisterInfo &TRI) {
+  unsigned Skip;
+  return MI.isCopy() ||
+         (EnablePseudoCosting && (isSelect(MI.getOpcode()) ||
+                                 postOpcode(MI.getOpcode(), Skip) ||
+                                 isDirectSPAccess(MI, TRI)));
+}
+
+// A pair permutation must rename every scalar half and every full pair in
+// operands, debug locations and live-ins. Never separate allocated partners.
+static Register mapRegister(Register R, Register From, Register To, bool Swap,
+                            const TargetRegisterInfo &TRI) {
+  if (!From)
+    return R;
+  if (R == From)
+    return To;
+  if (Swap && R == To)
+    return From;
+  if (PI32V2::GPRPairRegClass.contains(From))
+    for (unsigned Sub : {PI32V2::sub_lo, PI32V2::sub_hi}) {
+      Register F = TRI.getSubReg(From, Sub), T = TRI.getSubReg(To, Sub);
+      if (R == F)
+        return T;
+      if (Swap && R == T)
+        return F;
+    }
+  return R;
+}
+
 namespace {
 class PI32V2SizeReduce : public MachineFunctionPass {
+  enum Stage { All, Global, Local } RunStage;
 public:
   static char ID;
-  PI32V2SizeReduce() : MachineFunctionPass(ID) {}
+  PI32V2SizeReduce() : MachineFunctionPass(ID), RunStage(All) {}
+  explicit PI32V2SizeReduce(bool LocalOnly)
+      : MachineFunctionPass(ID), RunStage(LocalOnly ? Local : Global) {}
   StringRef getPassName() const override { return "PI32V2 size reduction"; }
   MachineFunctionProperties getRequiredProperties() const override {
     return MachineFunctionProperties().setNoVRegs().setTracksLiveness();
@@ -52,6 +161,7 @@ private:
   unsigned encodedSize(const MachineInstr &MI, Register From = Register(),
                        Register To = Register(), bool Swap = false) const;
   bool recolorCalleeSaved(MachineFunction &MF);
+  bool recolorRegions(MachineFunction &MF);
   Register recolor(MachineInstr &Def, Register From, const LiveRegUnits &Live,
                    const LiveRegUnits &LiveOut);
 };
@@ -61,26 +171,41 @@ char PI32V2SizeReduce::ID = 0;
 
 INITIALIZE_PASS(PI32V2SizeReduce, DEBUG_TYPE, "PI32V2 size reduction", false, false)
 
-FunctionPass *llvm::createPI32V2SizeReducePass() {
-  return new PI32V2SizeReduce();
+FunctionPass *llvm::createPI32V2SizeReducePass(bool LocalOnly) {
+  return new PI32V2SizeReduce(LocalOnly);
 }
 
-// Use the emitter's compression rules rather than approximating the immediate
-// and register constraints. Pseudos are unchanged in cost by a high-to-low
-// recoloring; do not count any possible savings from them.
+// Use the emitter's compression rules, including the exact register-dependent
+// parts of SELECT and post-increment expansion. Direct SP accesses and COPY
+// have invariant size; other uncosted pseudos cannot participate in a swap.
 unsigned PI32V2SizeReduce::encodedSize(const MachineInstr &MI, Register From,
                                      Register To, bool Swap) const {
-  if (MI.isPseudo() || MI.isInlineAsm() || MI.isDebugInstr())
+  if (MI.isInlineAsm() || MI.isDebugInstr())
     return 0;
   MCInst Inst;
-  Inst.setOpcode(MI.getOpcode());
+  unsigned Skip = ~0u;
+  unsigned Post = postOpcode(MI.getOpcode(), Skip);
+  if (MI.isPseudo()) {
+    if (isSelect(MI.getOpcode())) {
+      Register Dst = mapRegister(MI.getOperand(0).getReg(), From, To, Swap, *TRI);
+      if (MI.getOperand(3).isReg())
+        return Dst == mapRegister(MI.getOperand(3).getReg(), From, To, Swap, *TRI)
+                   ? 0 : 6; // four-byte opener and two-byte scalar move
+      Inst.setOpcode(PI32V2::LI_S16);
+      Inst.addOperand(MCOperand::createReg(Dst));
+      Inst.addOperand(MCOperand::createImm(MI.getOperand(3).getImm()));
+      PI32V2::compressInst(Inst, *TII, *TRI);
+      return 4 + TII->get(Inst.getOpcode()).getSize();
+    }
+    if (!Post)
+      return 0; // COPY and direct SP accesses have invariant size.
+  }
+  Inst.setOpcode(Post ? Post : MI.getOpcode());
   for (const MachineOperand &MO : MI.explicit_operands()) {
+    if (Post && MO.getOperandNo() == Skip)
+      continue;
     if (MO.isReg()) {
-      Register R = MO.getReg();
-      if (R == From)
-        R = To;
-      else if (Swap && R == To)
-        R = From;
+      Register R = mapRegister(MO.getReg(), From, To, Swap, *TRI);
       Inst.addOperand(MCOperand::createReg(R));
     } else if (MO.isImm())
       Inst.addOperand(MCOperand::createImm(MO.getImm()));
@@ -94,121 +219,151 @@ unsigned PI32V2SizeReduce::encodedSize(const MachineInstr &MI, Register From,
 bool PI32V2SizeReduce::recolorCalleeSaved(MachineFunction &MF) {
   bool Changed = false;
   unsigned FirstSaved = MF.getFunction().hasFnAttribute("interrupt") ? 0 : 4;
-  // Both sides of a swap are callee-saved. Calls preserve them, and PEI has
-  // not yet chosen the save mask. Never change a fixed physical operand or
-  // split an allocated register pair.
+  auto SaveSize = [](unsigned Mask) {
+    // The push and pop each use two bytes for a contiguous range, four for
+    // a sparse mask. Interrupts can also save caller-saved registers.
+    if (!Mask)
+      return 0;
+    if (Mask & 15) {
+      for (unsigned K = 0; K != 4; ++K)
+        if (Mask == (15u & ~((1u << K) - 1)))
+          return 4;
+      return 8;
+    }
+    return isPowerOf2_32((Mask | 15) + 1) ? 4 : 8;
+  };
+  SmallVector<std::pair<Register, Register>, 40> Candidates;
+  for (unsigned L = 4; L != 8; ++L)
+    for (unsigned H = 8; H != 16; ++H)
+      Candidates.emplace_back(PI32V2::R0 + L, PI32V2::R0 + H);
+  if (EnablePairRecolor)
+    for (Register L : {PI32V2::R5_R4, PI32V2::R7_R6})
+      for (Register H : {PI32V2::R9_R8, PI32V2::R11_R10,
+                         PI32V2::R13_R12, PI32V2::R15_R14})
+        Candidates.emplace_back(L, H);
+
   for (unsigned Round = 0; Round != 4; ++Round) {
-    unsigned Eligible = 0xFFF0;
     unsigned Used = 0;
     unsigned Saved = TRI->getFrameRegister(MF) == PI32V2::R7 ? 1 << 7 : 0;
-    for (auto LI : MF.front().liveins())
-      for (unsigned R = 4; R != 16; ++R)
-        if (TRI->regsOverlap(LI.PhysReg, PI32V2::R0 + R))
-          Eligible &= ~(1 << R);
-    SmallVector<std::tuple<MachineInstr *, unsigned, unsigned>, 64> Instructions;
+    SmallVector<std::pair<MachineInstr *, unsigned>, 64> Instructions;
     for (MachineBasicBlock &MBB : MF)
       for (MachineInstr &MI : MBB) {
-        if (MI.isDebugInstr()) {
-          // A pair debug location cannot describe a scalar half moved away
-          // from its partner. Scalar locations can be renamed with the value.
-          for (const MachineOperand &MO : MI.operands())
-            if (MO.isReg() && MO.getReg())
-              for (unsigned R = 4; R != 16; ++R)
-                if (MO.getReg() != PI32V2::R0 + R &&
-                    TRI->regsOverlap(MO.getReg(), PI32V2::R0 + R))
-                  Eligible &= ~(1 << R);
+        if (MI.isDebugInstr())
           continue;
-        }
-        unsigned Regs = 0;
-        for (const MachineOperand &MO : MI.operands()) {
-          if (MO.isRegMask()) {
-            for (unsigned R = FirstSaved; R != 16; ++R)
-              if (MO.clobbersPhysReg(PI32V2::R0 + R)) {
-                Eligible &= ~(1 << R);
-                Used |= 1 << R;
-                Saved |= 1 << R;
-              }
-            continue;
+        Instructions.emplace_back(&MI, encodedSize(MI));
+        for (const MachineOperand &MO : MI.operands())
+          for (unsigned N = FirstSaved; N != 16; ++N) {
+            Register R = PI32V2::R0 + N;
+            if (MO.isRegMask() && MO.clobbersPhysReg(R)) {
+              Used |= 1 << N;
+              Saved |= 1 << N;
+            } else if (MO.isReg() && MO.getReg() &&
+                       TRI->regsOverlap(MO.getReg(), R)) {
+              Used |= 1 << N;
+              if (MO.isDef())
+                Saved |= 1 << N;
+            }
           }
-          if (!MO.isReg() || !MO.getReg())
-            continue;
-          for (unsigned R = FirstSaved; R != 16; ++R) {
-            Register Reg = PI32V2::R0 + R;
-            if (!TRI->regsOverlap(MO.getReg(), Reg))
+      }
+
+    int BestSaving = 0;
+    Register BestLow, BestHigh;
+    for (auto [L, H] : Candidates) {
+      auto Replace = [&](Register R) {
+        return mapRegister(R, H, L, true, *TRI);
+      };
+      unsigned Mask = 0, HighMask = 0, NewSaved = 0;
+      bool Legal = true;
+      for (unsigned N = 0; N != 16; ++N) {
+        Register R = PI32V2::R0 + N;
+        Register New = Replace(R);
+        if (R != New) {
+          Mask |= 1 << N;
+          if (N >= 8)
+            HighMask |= 1 << N;
+          if (MF.getRegInfo().isReserved(R))
+            Legal = false;
+        }
+        if (Saved & (1 << N))
+          NewSaved |= 1 << TRI->getEncodingValue(New);
+      }
+      if (!Legal || !(Used & HighMask))
+        continue;
+      for (auto LI : MF.front().liveins())
+        for (unsigned N = 4; N != 16; ++N)
+          if ((Mask & (1 << N)) &&
+              TRI->regsOverlap(LI.PhysReg, PI32V2::R0 + N))
+            Legal = false;
+      int Saving = SaveSize(Saved) - SaveSize(NewSaved);
+      for (MachineBasicBlock &MBB : MF) {
+        for (MachineInstr &MI : MBB) {
+          for (const MachineOperand &MO : MI.operands()) {
+            if (MO.isRegMask()) {
+              for (unsigned N = 4; N != 16; ++N)
+                if ((Mask & (1 << N)) &&
+                    MO.clobbersPhysReg(PI32V2::R0 + N))
+                  Legal = false;
               continue;
-            Regs |= 1 << R;
-            Used |= 1 << R;
-            if (MO.isDef())
-              Saved |= 1 << R;
-            if (MO.getReg() != Reg || !MO.isRenamable() || MO.isImplicit() ||
-                MO.getSubReg() || MI.isInlineAsm() ||
-                (MI.isPseudo() && !MI.isCopy())) {
-              Eligible &= ~(1 << R);
+            }
+            if (!MO.isReg() || !MO.getReg())
               continue;
+            Register Old = MO.getReg(), New = Replace(Old);
+            bool Overlaps = TRI->regsOverlap(Old, L) ||
+                            TRI->regsOverlap(Old, H);
+            if (!Overlaps)
+              continue;
+            // Scalar swaps cannot rewrite full pairs, even debug locations.
+            if (Old == New) {
+              Legal = false;
+              break;
+            }
+            if (MI.isDebugInstr())
+              continue;
+            if (!MO.isRenamable() || MO.isImplicit() || MO.getSubReg() ||
+                MI.isInlineAsm() ||
+                (MI.isPseudo() && !isCostedPseudo(MI, *TRI))) {
+              Legal = false;
+              break;
             }
             const TargetRegisterClass *RC =
                 TII->getRegClass(MI.getDesc(), MO.getOperandNo());
-            if (RC && !RC->hasSubClassEq(&PI32V2::GPRRegClass))
-              Eligible &= ~(1 << R);
+            if (RC && !RC->contains(New)) {
+              Legal = false;
+              break;
+            }
           }
+          if (!Legal)
+            break;
         }
-        if (Regs)
-          Instructions.emplace_back(&MI, encodedSize(MI), Regs);
+        if (!Legal)
+          break;
       }
-    for (unsigned R = 4; R != 16; ++R)
-      if (MF.getRegInfo().isReserved(PI32V2::R0 + R))
-        Eligible &= ~(1 << R);
-
-    auto SaveSize = [](unsigned Mask) {
-      // Both push and pop: a range down to r4 (or ending at r3 in an
-      // interrupt) is two bytes each, a sparse mask four each.
-      if (!Mask)
-        return 0;
-      if (Mask & 15) {
-        for (unsigned K = 0; K != 4; ++K)
-          if (Mask == (15u & ~((1u << K) - 1)))
-            return 4;
-        return 8;
+      if (!Legal)
+        continue;
+      for (auto [MI, Size] : Instructions) {
+        Saving += int(Size) - int(encodedSize(*MI, H, L, true));
+        // Branch relaxation may need a long form anyway: charge for moving
+        // a short zero compare high, but do not assume the reverse saves.
+        if ((MI->getOpcode() == PI32V2::BEQ_RI ||
+             MI->getOpcode() == PI32V2::BNE_RI ||
+             MI->getOpcode() == PI32V2::BEQ_RI_L ||
+             MI->getOpcode() == PI32V2::BNE_RI_L) &&
+            PI32V2::GPRLoRegClass.contains(MI->getOperand(0).getReg()) &&
+            PI32V2::GPRHiRegClass.contains(
+                Replace(MI->getOperand(0).getReg())) &&
+            MI->getOperand(1).isImm() && MI->getOperand(1).getImm() == 0)
+          Saving -= 2;
       }
-      return isPowerOf2_32((Mask | 15) + 1) ? 4 : 8;
-    };
-    int BestSaving = 0;
-    Register BestLow, BestHigh;
-    for (unsigned Low = 4; Low != 8; ++Low)
-      for (unsigned High = 8; High != 16; ++High) {
-        if (!(Eligible & (1 << Low)) || !(Eligible & (1 << High)) ||
-            !(Used & (1 << High)))
-          continue;
-        Register L = PI32V2::R0 + Low, H = PI32V2::R0 + High;
-        unsigned NewSaved = Saved;
-        if (bool(Saved & (1 << Low)) != bool(Saved & (1 << High)))
-          NewSaved ^= (1 << Low) | (1 << High);
-        int Saving = SaveSize(Saved) - SaveSize(NewSaved);
-        for (auto [MI, Size, Regs] : Instructions) {
-          if (!(Regs & ((1 << Low) | (1 << High))))
-            continue;
-          Saving += int(Size) - int(encodedSize(*MI, H, L, true));
-          // A zero-compare branch with an MBB target is not lowered by
-          // encodedSize. Conservatively charge for widening it, but do not
-          // assume a saving: relaxation may need the long form anyway.
-          if ((MI->getOpcode() == PI32V2::BEQ_RI ||
-               MI->getOpcode() == PI32V2::BNE_RI ||
-               MI->getOpcode() == PI32V2::BEQ_RI_L ||
-               MI->getOpcode() == PI32V2::BNE_RI_L) &&
-              MI->getOperand(0).getReg() == L &&
-              MI->getOperand(1).isImm() && MI->getOperand(1).getImm() == 0)
-            Saving -= 2;
-        }
-        if (Saving > BestSaving) {
-          BestSaving = Saving;
-          BestLow = L;
-          BestHigh = H;
-        }
+      if (Saving > BestSaving) {
+        BestSaving = Saving;
+        BestLow = L;
+        BestHigh = H;
       }
+    }
     if (!BestLow)
       break;
     auto Replace = [&](Register R) {
-      return R == BestLow ? BestHigh : R == BestHigh ? BestLow : R;
+      return mapRegister(R, BestHigh, BestLow, true, *TRI);
     };
     for (MachineBasicBlock &MBB : MF) {
       for (MachineInstr &MI : MBB)
@@ -283,8 +438,16 @@ Register PI32V2SizeReduce::recolor(MachineInstr &Def, Register From,
       continue;
     // Do not open a new callee save for a local encoding saving. The pass runs
     // before prologue/epilogue insertion, so existing saves are still flexible.
-    if (R >= PI32V2::R4 && !MRI.isPhysRegUsed(R))
-      continue;
+    if (R >= PI32V2::R4) {
+      if (RunStage == Local) {
+        if (none_of(MF.getFrameInfo().getCalleeSavedInfo(),
+                    [&](const CalleeSavedInfo &CSI) {
+                      return TRI->regsOverlap(CSI.getReg(), R);
+                    }))
+          continue;
+      } else if (!MRI.isPhysRegUsed(R))
+        continue;
+    }
     bool Legal = true;
     unsigned Size = 0;
     for (auto I = Begin; I != End && Legal; ++I) {
@@ -319,12 +482,144 @@ Register PI32V2SizeReduce::recolor(MachineInstr &Def, Register From,
   return Best;
 }
 
+// Rename a register throughout a connected region of blocks. Every live-in
+// edge stays inside the region, and the destination must be dead and untouched
+// in every block. This deliberately avoids live-range splitting and copies.
+bool PI32V2SizeReduce::recolorRegions(MachineFunction &MF) {
+  bool Changed = false;
+  auto IsLiveIn = [&](const MachineBasicBlock &MBB, Register R) {
+    return any_of(MBB.liveins(), [&](auto LI) {
+      return TRI->regsOverlap(LI.PhysReg, R);
+    });
+  };
+  for (Register From : PI32V2::GPRHiRegClass) {
+    SmallPtrSet<MachineBasicBlock *, 32> Seen;
+    for (MachineBasicBlock &Start : MF) {
+      if (Seen.contains(&Start))
+        continue;
+      SmallVector<MachineBasicBlock *, 16> Region{&Start};
+      Seen.insert(&Start);
+      for (unsigned I = 0; I != Region.size(); ++I) {
+        MachineBasicBlock &B = *Region[I];
+        auto Add = [&](MachineBasicBlock *Next) {
+          if (Seen.insert(Next).second)
+            Region.push_back(Next);
+        };
+        for (MachineBasicBlock *Succ : B.successors())
+          if (IsLiveIn(*Succ, From))
+            Add(Succ);
+        if (IsLiveIn(B, From))
+          for (MachineBasicBlock *Pred : B.predecessors())
+            Add(Pred);
+      }
+      if (is_contained(Region, &MF.front()) && IsLiveIn(MF.front(), From))
+        continue;
+      SmallVector<MachineOperand *, 32> Operands;
+      LiveRegUnits Unavailable(*TRI);
+      unsigned OldSize = 0;
+      bool Legal = true;
+      for (MachineBasicBlock *B : Region) {
+        for (auto LI : B->liveins())
+          if (Register(LI.PhysReg) != From &&
+              TRI->regsOverlap(LI.PhysReg, From))
+            Legal = false;
+        Unavailable.addLiveIns(*B);
+        Unavailable.addLiveOuts(*B);
+        for (MachineInstr &MI : *B) {
+          if (!MI.isDebugInstr())
+            Unavailable.accumulate(MI);
+          bool Affected = false;
+          for (MachineOperand &MO : MI.operands()) {
+            if (MO.isRegMask() && MO.clobbersPhysReg(From))
+              Legal = false;
+            if (!MO.isReg() || !MO.getReg() ||
+                !TRI->regsOverlap(MO.getReg(), From))
+              continue;
+            if (MO.getReg() != From ||
+                (!MI.isDebugInstr() &&
+                 (!MO.isRenamable() || MO.isImplicit() || MO.getSubReg() ||
+                  MI.isInlineAsm() ||
+                  (MI.isPseudo() && !isCostedPseudo(MI, *TRI)))))
+              Legal = false;
+            Operands.push_back(&MO);
+            Affected = true;
+          }
+          if (Affected)
+            OldSize += encodedSize(MI);
+        }
+      }
+      if (!Legal || Operands.empty())
+        continue;
+      Register Best;
+      unsigned BestSize = OldSize;
+      for (Register To : PI32V2::GPRLoRegClass) {
+        if (MF.getRegInfo().isReserved(To) || !Unavailable.available(To))
+          continue;
+        if (To >= PI32V2::R4 &&
+            none_of(MF.getFrameInfo().getCalleeSavedInfo(),
+                    [&](const CalleeSavedInfo &CSI) {
+                      return TRI->regsOverlap(CSI.getReg(), To);
+                    }))
+          continue;
+        bool Fits = true;
+        SmallPtrSet<MachineInstr *, 32> Instructions;
+        unsigned Size = 0;
+        for (MachineOperand *MO : Operands) {
+          MachineInstr &MI = *MO->getParent();
+          if (!MI.isDebugInstr()) {
+            const TargetRegisterClass *RC =
+                TII->getRegClass(MI.getDesc(), MO->getOperandNo());
+            if (RC && !RC->contains(To)) {
+              Fits = false;
+              break;
+            }
+          }
+          if (Instructions.insert(&MI).second)
+            Size += encodedSize(MI, From, To);
+        }
+        if (Fits && Size < BestSize) {
+          Best = To;
+          BestSize = Size;
+        }
+      }
+      if (!Best)
+        continue;
+      for (MachineOperand *MO : Operands) {
+        bool Renamable = MO->isRenamable();
+        MO->setReg(Best);
+        MO->setIsRenamable(Renamable);
+      }
+      for (MachineBasicBlock *B : Region) {
+        std::vector<MachineBasicBlock::RegisterMaskPair> OldLiveIns;
+        B->clearLiveIns(OldLiveIns);
+        for (auto LI : OldLiveIns)
+          B->addLiveIn(Register(LI.PhysReg) == From ? Best : Register(LI.PhysReg),
+                       LI.LaneMask);
+        B->sortUniqueLiveIns();
+      }
+      Changed = true;
+    }
+  }
+  return Changed;
+}
+
 bool PI32V2SizeReduce::runOnMachineFunction(MachineFunction &MF) {
   if (!EnableSizeReduce || skipFunction(MF.getFunction()))
     return false;
   TII = MF.getSubtarget<PI32V2Subtarget>().getInstrInfo();
   TRI = &TII->getRegisterInfo();
-  bool Changed = EnableGlobalRecolor && recolorCalleeSaved(MF);
+  if (RunStage != Local && EnablePseudoCosting &&
+      !MF.getFrameInfo().isMaxCallFrameSizeComputed())
+    MF.getFrameInfo().computeMaxCallFrameSize(MF);
+  bool Changed = RunStage != Local && EnableGlobalRecolor &&
+                 recolorCalleeSaved(MF);
+  // Local renaming changes the availability of scratch registers. Run it
+  // after sinking/tail duplication: otherwise a copy previously shared by
+  // two loop paths can be duplicated into both successors by a later pass.
+  if (RunStage == Global)
+    return Changed;
+  if (EnableCrossBlockRecolor)
+    Changed |= recolorRegions(MF);
   for (MachineBasicBlock &MBB : MF) {
     LiveRegUnits LiveOut(*TRI);
     LiveOut.addLiveOuts(MBB);

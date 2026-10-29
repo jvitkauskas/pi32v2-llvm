@@ -1,0 +1,49 @@
+# RUN: llc -mtriple=pi32v2 -run-pass=greedy,virtregrewriter -verify-machineinstrs %s -o - | FileCheck %s
+# RUN: llc -mtriple=pi32v2 -run-pass=greedy,virtregrewriter -pi32v2-low-hints=false -pi32v2-twoaddr-hints=false -verify-machineinstrs %s -o - | FileCheck %s
+
+# Size hints must not retain copies in loops, including when the value being
+# hinted is entirely outside the loop: eviction/splitting can affect other
+# values. Both runs must make the baseline allocation decisions.
+--- |
+  define void @loop_address() optsize { ret void }
+  define void @outside_loop() optsize { ret void }
+...
+---
+name: loop_address
+tracksRegLiveness: true
+body: |
+  bb.0:
+    successors: %bb.1
+    liveins: $r0, $r8
+    %0:gpr = COPY $r8
+    %4:gpr = COPY $r0
+    GOTO_S %bb.1
+  bb.1:
+    successors: %bb.1
+    ; CHECK-LABEL: name: loop_address
+    ; CHECK: renamable $r1 = LD_W_L renamable $r8, 0
+    ; CHECK-NEXT: renamable $r2 = LD_W_L renamable $r8, 4
+    %1:gpr = LD_W_L %0, 0
+    %2:gpr = LD_W_L %0, 4
+    %3:gpr = ADD_RRR_L %1, %2, implicit-def dead $psr
+    ST_W_L %4, 0, %3
+    GOTO_S %bb.1
+...
+---
+name: outside_loop
+tracksRegLiveness: true
+body: |
+  bb.0:
+    successors: %bb.1
+    liveins: $r0, $r2, $r3
+    ; CHECK-LABEL: name: outside_loop
+    ; CHECK: renamable $r1 = MUL_RRR killed renamable $r3, killed renamable $r2
+    %0:gpr = COPY $r3
+    %1:gpr = COPY $r2
+    %2:gpr = MUL_RRR %0, %1, implicit-def dead $psr
+    ST_W_L $r0, 0, %2
+    GOTO_S %bb.1
+  bb.1:
+    successors: %bb.1
+    GOTO_S %bb.1
+...
