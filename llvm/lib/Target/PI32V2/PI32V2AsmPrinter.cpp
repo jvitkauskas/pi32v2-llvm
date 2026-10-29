@@ -372,6 +372,15 @@ void PI32V2AsmPrinter::emitOne(const MachineInstr *MI) {
   case PI32V2::PseudoBRJT:
     emitBRJT(MI);
     return;
+  case PI32V2::PseudoDBNZ: {
+    MCOperand Target;
+    lowerOperand(MI->getOperand(2), Target);
+    Inst.setOpcode(PI32V2::DBNZ_R);
+    Inst.addOperand(MCOperand::createReg(MI->getOperand(1).getReg()));
+    Inst.addOperand(Target);
+    EmitToStreamer(*OutStreamer, Inst);
+    return;
+  }
   case PI32V2::SELECT_AND:
   case PI32V2::SELECT_ANDI:
   case PI32V2::SELECT_CC:

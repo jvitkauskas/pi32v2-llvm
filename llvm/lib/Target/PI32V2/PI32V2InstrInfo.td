@@ -97,6 +97,12 @@ let isBranch = 1, isIndirectBranch = 1, isTerminator = 1, isBarrier = 1,
 def PseudoBRJT : PI32V2Pseudo<(outs GPR:$dead, GPR:$tmp),
                               (ins GPR:$idx, i32imm_op:$jti)>;
 
+// dec-and-branch (PI32V2DecBranch): if (--r != 0) goto, the register in and out.
+def dbnz_target : Operand<OtherVT>;
+let isBranch = 1, isTerminator = 1, hasSideEffects = 0,
+    Constraints = "$dst = $r" in
+def PseudoDBNZ : PI32V2Pseudo<(outs GPR:$dst), (ins GPR:$r, dbnz_target:$n)>;
+
 // return: rts, or the epilogue's {pc, ...} = [sp++].
 let isReturn = 1, isTerminator = 1, isBarrier = 1, Uses = [RETS] in
 def PseudoRET : PI32V2Pseudo<(outs), (ins variable_ops), [(PI32V2ret)]>;
