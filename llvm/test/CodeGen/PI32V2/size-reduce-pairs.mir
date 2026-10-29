@@ -1,0 +1,63 @@
+# RUN: llc -mtriple=pi32v2 -run-pass=pi32v2-size-reduce -verify-machineinstrs %s -o - | FileCheck %s
+# RUN: llc -mtriple=pi32v2 -run-pass=pi32v2-size-reduce -pi32v2-pair-recolor=false -verify-machineinstrs %s -o - | FileCheck %s --check-prefix=NO-PAIR
+
+--- |
+  define void @pair_halves() { ret void }
+  define void @fixed_half() { ret void }
+  define void @pair_livein() { ret void }
+...
+---
+name: pair_halves
+tracksRegLiveness: true
+body: |
+  bb.0:
+    successors: %bb.1
+    liveins: $r1_r0
+    ; CHECK-LABEL: name: pair_halves
+    ; CHECK: renamable $r5_r4 = MOV_PAIR $r1_r0
+    ; CHECK-NEXT: renamable $r4 = ADD_S14_RRI renamable $r4, 64
+    ; CHECK: bb.1:
+    ; CHECK-NEXT: liveins: $r5_r4
+    ; CHECK: $r1_r0 = MOV_PAIR killed renamable $r5_r4
+    ; NO-PAIR-LABEL: name: pair_halves
+    ; NO-PAIR: renamable $r9_r8 = MOV_PAIR $r1_r0
+    ; NO-PAIR: $r1_r0 = MOV_PAIR killed renamable $r9_r8
+    renamable $r9_r8 = MOV_PAIR $r1_r0
+    renamable $r8 = ADD_S14_RRI renamable $r8, 64, implicit-def dead $psr
+    GOTO_S %bb.1
+  bb.1:
+    liveins: $r9_r8
+    $r1_r0 = MOV_PAIR killed renamable $r9_r8
+    PseudoRET $r1, $r0, implicit $rets
+...
+
+# A fixed scalar half excludes the entire pair permutation.
+---
+name: fixed_half
+tracksRegLiveness: true
+body: |
+  bb.0:
+    liveins: $r1_r0, $r2
+    ; CHECK-LABEL: name: fixed_half
+    ; CHECK: renamable $r9_r8 = MOV_PAIR $r1_r0
+    ; CHECK: ST_W_L $r2, 0, $r8
+    renamable $r9_r8 = MOV_PAIR $r1_r0
+    renamable $r8 = ADD_S14_RRI renamable $r8, 64, implicit-def dead $psr
+    ST_W_L $r2, 0, $r8
+    $r1_r0 = MOV_PAIR killed renamable $r9_r8
+    PseudoRET $r1, $r0, implicit $rets
+...
+
+# Incoming physical pairs have an ABI identity even if their uses are renamable.
+---
+name: pair_livein
+tracksRegLiveness: true
+body: |
+  bb.0:
+    liveins: $r9_r8
+    ; CHECK-LABEL: name: pair_livein
+    ; CHECK: renamable $r8 = ADD_S14_RRI renamable $r8, 64
+    renamable $r8 = ADD_S14_RRI renamable $r8, 64, implicit-def dead $psr
+    $r1_r0 = MOV_PAIR killed renamable $r9_r8
+    PseudoRET $r1, $r0, implicit $rets
+...
