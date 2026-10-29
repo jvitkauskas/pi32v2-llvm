@@ -18,7 +18,6 @@
 #include "llvm/MC/MCInst.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/MathExtras.h"
-#include <tuple>
 
 using namespace llvm;
 
@@ -35,6 +34,83 @@ static cl::opt<bool> EnableGlobalRecolor(
 static cl::opt<bool> EnablePairRecolor(
     "pi32v2-pair-recolor", cl::Hidden, cl::init(true),
     cl::desc("Swap PI32V2 register pairs together with their scalar halves"));
+
+static cl::opt<bool> EnablePseudoCosting(
+    "pi32v2-recolor-pseudos", cl::Hidden, cl::init(true),
+    cl::desc("Cost PI32V2 pseudo expansions during register recoloring"));
+
+static unsigned postOpcode(unsigned Opc, unsigned &Skip) {
+  Skip = 1;
+  switch (Opc) {
+  case PI32V2::LDW_POST: return PI32V2::LD_W_PIN_L;
+  case PI32V2::LDHU_POST: return PI32V2::LD_HU_PIN_L;
+  case PI32V2::LDHS_POST: return PI32V2::LD_HS_PIN_L;
+  case PI32V2::LDBU_POST: return PI32V2::LD_BU_PIN_L;
+  case PI32V2::LDBS_POST: return PI32V2::LD_BS_PIN_L;
+  }
+  Skip = 0;
+  switch (Opc) {
+  case PI32V2::STW_POST: return PI32V2::ST_W_PIN_L;
+  case PI32V2::STH_POST: return PI32V2::ST_H_PIN_L;
+  case PI32V2::STB_POST: return PI32V2::ST_B_PIN_L;
+  }
+  return 0;
+}
+
+static bool isSelect(unsigned Opc) {
+  switch (Opc) {
+  case PI32V2::SELECT_CC: case PI32V2::SELECT_CC_RI:
+  case PI32V2::SELECT_CC_RRI: case PI32V2::SELECT_CC_RII:
+  case PI32V2::SELECT_AND: case PI32V2::SELECT_ANDI:
+    return true;
+  default:
+    return false;
+  }
+}
+
+// Before PEI, do not assume a particular stack offset. Only allow accesses
+// proved to fit their SP form for every possible layout: its size does not
+// depend on the value register. Include room for all saves, varargs and the
+// emergency slot. Large frames and frame-pointer addressing stay excluded.
+static bool isDirectSPAccess(const MachineInstr &MI,
+                             const PI32V2RegisterInfo &TRI) {
+  unsigned Scale, Max;
+  switch (MI.getOpcode()) {
+  case PI32V2::LDW_FI: case PI32V2::STW_FI:
+    Scale = 4; Max = 4092; break;
+  case PI32V2::LDHU_FI: case PI32V2::LDHS_FI: case PI32V2::STH_FI:
+    Scale = 2; Max = 4094; break;
+  case PI32V2::LDBU_FI: case PI32V2::LDBS_FI: case PI32V2::STB_FI:
+    Scale = 1; Max = 4095; break;
+  default:
+    return false;
+  }
+  const MachineFunction &MF = *MI.getMF();
+  const MachineFrameInfo &MFI = MF.getFrameInfo();
+  if (TRI.getFrameRegister(MF) != PI32V2::SP)
+    return false;
+  int FI = MI.getOperand(1).getIndex();
+  int64_t Disp = MI.getOperand(2).getImm();
+  if (Disp < 0 || Disp % Scale || MFI.getObjectAlign(FI) < Align(Scale))
+    return false;
+  int64_t Extra = 0;
+  if (MFI.isFixedObjectIndex(FI)) {
+    Extra = MFI.getObjectOffset(FI);
+    if (Extra < 0 || Extra % Scale)
+      return false;
+  } else if (Disp > MFI.getObjectSize(FI))
+    return false;
+  return MFI.estimateStackSize(MF) + 128 + Extra + Disp <= Max;
+}
+
+static bool isCostedPseudo(const MachineInstr &MI,
+                           const PI32V2RegisterInfo &TRI) {
+  unsigned Skip;
+  return MI.isCopy() ||
+         (EnablePseudoCosting && (isSelect(MI.getOpcode()) ||
+                                 postOpcode(MI.getOpcode(), Skip) ||
+                                 isDirectSPAccess(MI, TRI)));
+}
 
 // A pair permutation must rename every scalar half and every full pair in
 // operands, debug locations and live-ins. Never separate allocated partners.
@@ -94,16 +170,35 @@ FunctionPass *llvm::createPI32V2SizeReducePass(bool LocalOnly) {
   return new PI32V2SizeReduce(LocalOnly);
 }
 
-// Use the emitter's compression rules rather than approximating the immediate
-// and register constraints. Pseudos are unchanged in cost by a high-to-low
-// recoloring; do not count any possible savings from them.
+// Use the emitter's compression rules, including the exact register-dependent
+// parts of SELECT and post-increment expansion. Direct SP accesses and COPY
+// have invariant size; other uncosted pseudos cannot participate in a swap.
 unsigned PI32V2SizeReduce::encodedSize(const MachineInstr &MI, Register From,
                                      Register To, bool Swap) const {
-  if (MI.isPseudo() || MI.isInlineAsm() || MI.isDebugInstr())
+  if (MI.isInlineAsm() || MI.isDebugInstr())
     return 0;
   MCInst Inst;
-  Inst.setOpcode(MI.getOpcode());
+  unsigned Skip = ~0u;
+  unsigned Post = postOpcode(MI.getOpcode(), Skip);
+  if (MI.isPseudo()) {
+    if (isSelect(MI.getOpcode())) {
+      Register Dst = mapRegister(MI.getOperand(0).getReg(), From, To, Swap, *TRI);
+      if (MI.getOperand(3).isReg())
+        return Dst == mapRegister(MI.getOperand(3).getReg(), From, To, Swap, *TRI)
+                   ? 0 : 6; // four-byte opener and two-byte scalar move
+      Inst.setOpcode(PI32V2::LI_S16);
+      Inst.addOperand(MCOperand::createReg(Dst));
+      Inst.addOperand(MCOperand::createImm(MI.getOperand(3).getImm()));
+      PI32V2::compressInst(Inst, *TII, *TRI);
+      return 4 + TII->get(Inst.getOpcode()).getSize();
+    }
+    if (!Post)
+      return 0; // COPY and direct SP accesses have invariant size.
+  }
+  Inst.setOpcode(Post ? Post : MI.getOpcode());
   for (const MachineOperand &MO : MI.explicit_operands()) {
+    if (Post && MO.getOperandNo() == Skip)
+      continue;
     if (MO.isReg()) {
       Register R = mapRegister(MO.getReg(), From, To, Swap, *TRI);
       Inst.addOperand(MCOperand::createReg(R));
@@ -220,7 +315,8 @@ bool PI32V2SizeReduce::recolorCalleeSaved(MachineFunction &MF) {
             if (MI.isDebugInstr())
               continue;
             if (!MO.isRenamable() || MO.isImplicit() || MO.getSubReg() ||
-                MI.isInlineAsm() || (MI.isPseudo() && !MI.isCopy())) {
+                MI.isInlineAsm() ||
+                (MI.isPseudo() && !isCostedPseudo(MI, *TRI))) {
               Legal = false;
               break;
             }
@@ -386,6 +482,9 @@ bool PI32V2SizeReduce::runOnMachineFunction(MachineFunction &MF) {
     return false;
   TII = MF.getSubtarget<PI32V2Subtarget>().getInstrInfo();
   TRI = &TII->getRegisterInfo();
+  if (RunStage != Local && EnablePseudoCosting &&
+      !MF.getFrameInfo().isMaxCallFrameSizeComputed())
+    MF.getFrameInfo().computeMaxCallFrameSize(MF);
   bool Changed = RunStage != Local && EnableGlobalRecolor &&
                  recolorCalleeSaved(MF);
   // Local renaming changes the availability of scratch registers. Run it
