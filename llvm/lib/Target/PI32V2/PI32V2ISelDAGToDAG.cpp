@@ -346,8 +346,15 @@ void PI32V2DAGToDAGISel::Select(SDNode *N) {
     case PI32V2ISD::SRL64: Opc = PI32V2::LSR_PAIR_R; break;
     default: Opc = PI32V2::ASR_PAIR_R; break;
     }
-    SDValue Q(CurDAG->getMachineNode(Opc, DL, MVT::i64, X, N->getOperand(2)),
-              0);
+    SDValue Count = N->getOperand(2);
+    if (auto *C = dyn_cast<ConstantSDNode>(Count);
+        C && Opc != PI32V2::DIV_U_PPR && Opc != PI32V2::DIV_S_PPR) {
+      Opc = Opc == PI32V2::LSL_PAIR_R   ? PI32V2::LSL_PAIR_I
+            : Opc == PI32V2::LSR_PAIR_R ? PI32V2::LSR_PAIR_I
+                                        : PI32V2::ASR_PAIR_I;
+      Count = CurDAG->getTargetConstant(C->getZExtValue() & 63, DL, MVT::i32);
+    }
+    SDValue Q(CurDAG->getMachineNode(Opc, DL, MVT::i64, X, Count), 0);
     if (!SDValue(N, 0).use_empty())
       ReplaceUses(SDValue(N, 0), CurDAG->getTargetExtractSubreg(
                                      PI32V2::sub_lo, DL, MVT::i32, Q));
