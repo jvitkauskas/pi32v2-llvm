@@ -1,0 +1,60 @@
+# RUN: llc -mtriple=pi32v2 -run-pass=pi32v2-size-reduce -pi32v2-global-recolor=false -pi32v2-crossblock-recolor=false -verify-machineinstrs %s -o - | FileCheck %s
+# RUN: llc -mtriple=pi32v2 -run-pass=pi32v2-size-reduce -pi32v2-global-recolor=false -pi32v2-crossblock-recolor=false -pi32v2-copy-recolor=false -verify-machineinstrs %s -o - | FileCheck %s --check-prefix=DISABLED
+
+--- |
+  define void @copy_out() { ret void }
+  define void @copy_in() { ret void }
+  define void @output_live() { ret void }
+...
+
+# The fixed return register is free until the final move. Define the value
+# there and erase the move, including when the value starts in a low register.
+---
+name: copy_out
+tracksRegLiveness: true
+body: |
+  bb.0:
+    liveins: $r1, $r2
+    ; CHECK-LABEL: name: copy_out
+    ; CHECK: renamable $r0 = ADD_F_RRR $r1, $r2
+    ; CHECK-NEXT: PseudoRET $r0
+    ; DISABLED-LABEL: name: copy_out
+    ; DISABLED: renamable $r3 = ADD_F_RRR $r1, $r2
+    ; DISABLED-NEXT: $r0 = COPY killed renamable $r3
+    renamable $r3 = ADD_F_RRR $r1, $r2
+    $r0 = COPY killed renamable $r3
+    PseudoRET $r0, implicit $rets
+...
+
+# The initial move can disappear too, provided its source dies there.
+---
+name: copy_in
+tracksRegLiveness: true
+body: |
+  bb.0:
+    liveins: $r0, $r2
+    ; CHECK-LABEL: name: copy_in
+    ; CHECK-NOT: COPY
+    ; CHECK: ST_W_L $r2, 0, killed renamable $r0
+    ; DISABLED-LABEL: name: copy_in
+    ; DISABLED: renamable $r3 = COPY killed $r0
+    renamable $r3 = COPY killed $r0
+    ST_W_L $r2, 0, killed renamable $r3
+    PseudoRET implicit $rets
+...
+
+# The copy output has another value which must survive the initial definition.
+---
+name: output_live
+tracksRegLiveness: true
+body: |
+  bb.0:
+    liveins: $r0, $r1, $r2
+    ; CHECK-LABEL: name: output_live
+    ; CHECK: renamable $r3 = ADD_F_RRR $r1, $r2
+    ; CHECK: $r0 = COPY killed renamable $r3
+    renamable $r3 = ADD_F_RRR $r1, $r2
+    ST_W_L $r1, 0, $r0
+    $r0 = COPY killed renamable $r3
+    PseudoRET $r0, implicit $rets
+...
