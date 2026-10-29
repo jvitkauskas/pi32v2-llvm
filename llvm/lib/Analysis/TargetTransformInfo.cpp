@@ -238,6 +238,11 @@ TargetTransformInfo::adjustInliningThreshold(const CallBase *CB) const {
   return TTIImpl->adjustInliningThreshold(CB);
 }
 
+int TargetTransformInfo::adjustInlineHintThreshold(const CallBase *CB,
+                                                 int Threshold) const {
+  return TTIImpl->adjustInlineHintThreshold(CB, Threshold);
+}
+
 unsigned TargetTransformInfo::getCallerAllocaCost(const CallBase *CB,
                                                   const AllocaInst *AI) const {
   return TTIImpl->getCallerAllocaCost(CB, AI);
