@@ -56,17 +56,17 @@ join:
 ; A then part leaving with a goto over a long block: no else part (the opener's
 ; second word 0x4000: two instructions, none else); the goto is 32-bit (0xea).
 ; CHECK-LABEL: long_else:
-; CHECK:       if (r1 != 0) {
+; CHECK:       if (r1 != 5) {
 ; CHECK-NEXT:  r4 = [r0+0]
 ; CHECK-NEXT:  goto .LBB2_3
 ; CHECK-NEXT:  }
 ; CHECK:       r2 *= r2
 ; ENC-LABEL:   long_else:
-; ENC:         if (r1 != 0) { ; encoding: [0xb1,0xe8,0x00,0x40]
+; ENC:         if (r1 != 5) { ; encoding: [0xb1,0xe8,0x05,0x40]
 ; ENC:         goto .LBB2_3 ; encoding: [0xc0'A',0xea'A',A,A]
 define void @long_else(ptr %p, i32 %n, i32 %k) optsize {
 entry:
-  %c = icmp ne i32 %n, 0
+  %c = icmp ne i32 %n, 5
   br i1 %c, label %short, label %long
 short:
   %v = load volatile i32, ptr %p

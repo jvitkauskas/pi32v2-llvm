@@ -213,6 +213,12 @@ bool PI32V2IfBlocks::convert(MachineBasicBlock &B) {
   unsigned Opener = Inv ? PI32V2::openerForBranch(Inv) : 0;
   if (!Opener)
     return false;
+  // `if (r == 0) goto` of r0..r7 is 2 bytes, an opener 4: JieLi's compiler
+  // keeps the branch there (also when an else part would save a goto)
+  if ((Br.getOpcode() == PI32V2::BEQ_RI || Br.getOpcode() == PI32V2::BNE_RI) &&
+      Br.getOperand(1).getImm() == 0 &&
+      PI32V2::GPRLoRegClass.contains(Br.getOperand(0).getReg()))
+    return false;
   MachineBasicBlock *T = Br.getOperand(2).getMBB();
   auto FIt = std::next(B.getIterator());
   if (FIt == MF.end() || &*FIt == T)
