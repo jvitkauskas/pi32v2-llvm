@@ -28,6 +28,7 @@ add_llvm_target(PI32V2CodeGen
   PI32V2ISelLowering.cpp
   PI32V2RegisterInfo.cpp
   PI32V2SelectionDAGInfo.cpp
+  PI32V2SizeReduce.cpp
   PI32V2Subtarget.cpp
   PI32V2TargetMachine.cpp
   PI32V2TargetObjectFile.cpp

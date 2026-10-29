@@ -1,0 +1,232 @@
+# RUN: llc -mtriple=pi32v2 -run-pass=pi32v2-size-reduce -pi32v2-global-recolor=false -verify-machineinstrs %s -o - | FileCheck %s
+# RUN: llc -mtriple=pi32v2 -run-pass=pi32v2-size-reduce -pi32v2-enable-size-reduce=false -verify-machineinstrs %s -o - | FileCheck %s --check-prefix=DISABLED
+# RUN: llc -mtriple=pi32v2 -run-pass=pi32v2-size-reduce -verify-machineinstrs %s -o - | FileCheck %s --check-prefix=GLOBAL
+
+# A local value, including its read/modify/write, can use a free low register.
+# The same three instructions then compress from twelve to six bytes.
+--- |
+  define void @local_low() { ret void }
+  define void @live_low() { ret void }
+  define void @no_new_callee_save() { ret void }
+  define void @live_out() { ret void }
+  define void @pair_alias() { ret void }
+  define void @fixed_use() { ret void }
+  define void @clobber_low() { ret void }
+  define void @no_saving() { ret void }
+  define void @global_high() { ret void }
+  define void @fixed_callee() { ret void }
+  define void @high_only_class() { ret void }
+  define void @irq_sparse() "interrupt" { ret void }
+...
+---
+name: local_low
+tracksRegLiveness: true
+body: |
+  bb.0:
+    liveins: $r0
+    ; CHECK-LABEL: name: local_low
+    ; CHECK: renamable $r1 = LD_W_L $r0, 0
+    ; CHECK-NEXT: renamable $r1 = ADD_S14_RRI killed renamable $r1, 64
+    ; CHECK-NEXT: ST_W_L $r0, 4, killed renamable $r1
+    ; DISABLED-LABEL: name: local_low
+    ; DISABLED: renamable $r8 = LD_W_L $r0, 0
+    renamable $r8 = LD_W_L $r0, 0
+    renamable $r8 = ADD_S14_RRI killed renamable $r8, 64, implicit-def dead $psr
+    ST_W_L $r0, 4, killed renamable $r8
+    PseudoRET implicit $rets
+...
+
+# Do not overwrite low registers that are live across the value's definition.
+---
+name: live_low
+tracksRegLiveness: true
+body: |
+  bb.0:
+    liveins: $r0, $r1, $r2, $r3, $r4, $r5, $r6, $r7
+    ; CHECK-LABEL: name: live_low
+    ; CHECK: renamable $r8 = LD_W_L $r0, 0
+    ; CHECK-NEXT: ST_W_L $r0, 4, killed renamable $r8
+    renamable $r8 = LD_W_L $r0, 0
+    ST_W_L $r0, 4, killed renamable $r8
+    ST_W_L $r0, 8, $r1
+    ST_W_L $r0, 12, $r2
+    ST_W_L $r0, 16, $r3
+    ST_W_L $r0, 20, $r4
+    ST_W_L $r0, 24, $r5
+    ST_W_L $r0, 28, $r6
+    ST_W_L $r0, 32, $r7
+    PseudoRET implicit $rets
+...
+
+# Do not introduce a new callee save just to shorten a local lifetime.
+---
+name: no_new_callee_save
+tracksRegLiveness: true
+body: |
+  bb.0:
+    liveins: $r0, $r1, $r2, $r3
+    ; CHECK-LABEL: name: no_new_callee_save
+    ; CHECK: renamable $r8 = LD_W_L $r0, 0
+    renamable $r8 = LD_W_L $r0, 0
+    ST_W_L $r0, 4, killed renamable $r8
+    ST_W_L $r0, 8, $r1
+    ST_W_L $r0, 12, $r2
+    ST_W_L $r0, 16, $r3
+    PseudoRET implicit $rets
+...
+
+# A value flowing into another block cannot be renamed locally.
+---
+name: live_out
+tracksRegLiveness: true
+body: |
+  bb.0:
+    successors: %bb.1
+    liveins: $r0
+    ; CHECK-LABEL: name: live_out
+    ; CHECK: renamable $r8 = LD_W_L $r0, 0
+    renamable $r8 = LD_W_L $r0, 0
+    GOTO_S %bb.1
+  bb.1:
+    liveins: $r0, $r8
+    ST_W_L $r0, 4, killed renamable $r8
+    PseudoRET implicit $rets
+...
+
+# A register-pair use aliases the scalar value: do not split the pair.
+---
+name: pair_alias
+tracksRegLiveness: true
+body: |
+  bb.0:
+    liveins: $r0, $r9
+    ; CHECK-LABEL: name: pair_alias
+    ; CHECK: renamable $r8 = LD_W_L $r0, 0
+    renamable $r8 = LD_W_L $r0, 0
+    $r1_r0 = MOV_PAIR killed renamable $r9_r8
+    PseudoRET $r1, $r0, implicit $rets
+...
+
+# Fixed physical operands, including ABI constraints, must stay fixed.
+---
+name: fixed_use
+tracksRegLiveness: true
+body: |
+  bb.0:
+    liveins: $r0
+    ; CHECK-LABEL: name: fixed_use
+    ; CHECK: renamable $r8 = LD_W_L $r0, 0
+    renamable $r8 = LD_W_L $r0, 0
+    ST_W_L $r0, 4, killed $r8
+    PseudoRET implicit $rets
+...
+
+# A low register with a definition inside the lifetime is not available.
+---
+name: clobber_low
+tracksRegLiveness: true
+body: |
+  bb.0:
+    liveins: $r0, $r2, $r3
+    ; CHECK-LABEL: name: clobber_low
+    ; CHECK: renamable $r8 = LD_W_L $r0, 0
+    renamable $r8 = LD_W_L $r0, 0
+    $r1 = LI_S16 7
+    ST_W_L $r0, 4, killed renamable $r8
+    ST_W_L $r0, 8, killed $r1
+    ST_W_L $r0, 12, $r2
+    ST_W_L $r0, 16, $r3
+    PseudoRET implicit $rets
+...
+
+# Float arithmetic has no compact form: do not churn register assignments.
+---
+name: no_saving
+tracksRegLiveness: true
+body: |
+  bb.0:
+    liveins: $r0, $r1
+    ; CHECK-LABEL: name: no_saving
+    ; CHECK: renamable $r8 = ADD_F_RRR $r0, $r1
+    renamable $r8 = ADD_F_RRR $r0, $r1
+    renamable $r9 = MUL_F_RRR killed renamable $r8, $r1
+    $r0 = COPY killed renamable $r9
+    PseudoRET $r0, implicit $rets
+...
+
+
+# Whole-function recoloring updates successor live-ins as well as operands.
+# Moving r8 to r4 also permits a compact range push/pop, with the same number
+# of saved registers. No instructions are added to the body.
+---
+name: global_high
+tracksRegLiveness: true
+body: |
+  bb.0:
+    successors: %bb.1
+    liveins: $r0
+    ; GLOBAL-LABEL: name: global_high
+    ; GLOBAL: renamable $r4 = LD_W_L $r0, 0
+    ; GLOBAL: bb.1:
+    ; GLOBAL-NEXT: liveins: $r0, $r4
+    ; GLOBAL: ST_W_L $r0, 4, killed renamable $r4
+    renamable $r8 = LD_W_L $r0, 0
+    GOTO_S %bb.1
+  bb.1:
+    liveins: $r0, $r8
+    ST_W_L $r0, 4, killed renamable $r8
+    PseudoRET implicit $rets
+...
+
+# An ABI live-in or a fixed physical register must not be swapped.
+---
+name: fixed_callee
+tracksRegLiveness: true
+body: |
+  bb.0:
+    successors: %bb.1
+    liveins: $r0, $r4
+    ; GLOBAL-LABEL: name: fixed_callee
+    ; GLOBAL: renamable $r5 = LD_W_L $r0, 0
+    ; GLOBAL: ST_W_L $r0, 8, $r4
+    renamable $r8 = LD_W_L $r0, 0
+    GOTO_S %bb.1
+  bb.1:
+    liveins: $r0, $r4, $r8
+    ST_W_L $r0, 4, killed renamable $r8
+    ST_W_L $r0, 8, $r4
+    PseudoRET implicit $rets
+...
+
+# A high-only opcode cannot simply be assigned a low destination. Its general
+# equivalent would need a different opcode; this pass does not select one.
+---
+name: high_only_class
+tracksRegLiveness: true
+body: |
+  bb.0:
+    liveins: $r0
+    ; CHECK-LABEL: name: high_only_class
+    ; CHECK: renamable $r8 = LI_ZERO_HI
+    ; CHECK-NEXT: ST_W_L $r0, 0, killed renamable $r8
+    ; GLOBAL-LABEL: name: high_only_class
+    ; GLOBAL: renamable $r8 = LI_ZERO_HI
+    renamable $r8 = LI_ZERO_HI
+    ST_W_L $r0, 0, killed renamable $r8
+    PseudoRET implicit $rets
+...
+
+
+# An interrupt also saves r0-r3 when modified. Renaming this r8 to r4 would
+# leave a sparse full save mask and cannot save any bytes in the body.
+---
+name: irq_sparse
+tracksRegLiveness: true
+body: |
+  bb.0:
+    ; GLOBAL-LABEL: name: irq_sparse
+    ; GLOBAL: renamable $r8 = LI_S16 1000
+    renamable $r8 = LI_S16 1000
+    $r0 = MOV_RR killed renamable $r8
+    PseudoRET $r0, implicit $rets
+...

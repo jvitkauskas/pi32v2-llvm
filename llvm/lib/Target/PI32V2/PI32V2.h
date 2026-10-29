@@ -21,6 +21,7 @@ FunctionPass *createPI32V2ISelDag(PI32V2TargetMachine &TM,
 FunctionPass *createPI32V2IfBlocksPass();
 FunctionPass *createPI32V2DecBranchPass();
 FunctionPass *createPI32V2AnchorBasePass();
+FunctionPass *createPI32V2SizeReducePass();
 FunctionPass *createPI32V2Div64PreparePass();
 FunctionPass *createPI32V2AlignAllocasPass();
 
@@ -37,6 +38,7 @@ unsigned branchForCond(unsigned Cond);
 unsigned branchWithImm(unsigned Br);
 } // namespace PI32V2
 void initializePI32V2AsmPrinterPass(PassRegistry &);
+void initializePI32V2SizeReducePass(PassRegistry &);
 void initializePI32V2DAGToDAGISelLegacyPass(PassRegistry &);
 } // namespace llvm
 

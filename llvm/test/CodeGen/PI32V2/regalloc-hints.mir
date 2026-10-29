@@ -1,0 +1,96 @@
+# RUN: llc -mtriple=pi32v2 -run-pass=greedy,virtregrewriter -pi32v2-low-hints=false -verify-machineinstrs %s -o - | FileCheck %s
+# RUN: llc -mtriple=pi32v2 -run-pass=greedy,virtregrewriter -pi32v2-low-hints=false -pi32v2-twoaddr-hints=false -verify-machineinstrs %s -o - | FileCheck %s --check-prefix=NO-HINT
+
+# Prefer reusing a source to choosing a third register simply because it is
+# first in the allocation order. No copies or extra constraints are needed.
+--- |
+  define void @multiply_source() optsize { ret void }
+  define void @logical_source() optsize { ret void }
+  define void @shift_source() optsize { ret void }
+  define void @add_immediate() optsize { ret void }
+  define void @speed_multiply() { ret void }
+...
+---
+name: multiply_source
+# CHECK-LABEL: name: multiply_source
+# CHECK: renamable $r2 = MUL_RRR killed renamable $r3, killed renamable $r2
+# NO-HINT-LABEL: name: multiply_source
+# NO-HINT: renamable $r1 = MUL_RRR
+tracksRegLiveness: true
+body: |
+  bb.0:
+    liveins: $r0, $r2, $r3
+    %0:gpr = COPY $r3
+    %1:gpr = COPY $r2
+    %2:gpr = MUL_RRR %0, %1, implicit-def dead $psr
+    ST_W_L $r0, 0, %2
+    PseudoRET implicit $rets
+...
+---
+name: logical_source
+# CHECK-LABEL: name: logical_source
+# CHECK: renamable $r2 = AND_RRR killed renamable $r3, killed renamable $r2
+# NO-HINT-LABEL: name: logical_source
+# NO-HINT: renamable $r1 = AND_RRR
+tracksRegLiveness: true
+body: |
+  bb.0:
+    liveins: $r0, $r2, $r3
+    %0:gpr = COPY $r3
+    %1:gpr = COPY $r2
+    %2:gpr = AND_RRR %0, %1, implicit-def dead $psr
+    ST_W_L $r0, 0, %2
+    PseudoRET implicit $rets
+...
+
+# Shift operands cannot be commuted. Reuse the value, not the shift count.
+---
+name: shift_source
+# CHECK-LABEL: name: shift_source
+# CHECK: renamable $r3 = LSL_RRR killed renamable $r3, killed renamable $r2
+# NO-HINT-LABEL: name: shift_source
+# NO-HINT: renamable $r1 = LSL_RRR
+tracksRegLiveness: true
+body: |
+  bb.0:
+    liveins: $r0, $r2, $r3
+    %0:gpr = COPY $r3
+    %1:gpr = COPY $r2
+    %2:gpr = LSL_RRR %0, %1, implicit-def dead $psr
+    ST_W_L $r0, 0, %2
+    PseudoRET implicit $rets
+...
+
+# The -128..-1 and 32..127 immediate add forms require result == source.
+---
+name: add_immediate
+# CHECK-LABEL: name: add_immediate
+# CHECK: renamable $r2 = ADD_S14_RRI killed renamable $r2, 64
+# NO-HINT-LABEL: name: add_immediate
+# NO-HINT: renamable $r1 = ADD_S14_RRI
+tracksRegLiveness: true
+body: |
+  bb.0:
+    liveins: $r0, $r2
+    %0:gpr = COPY $r2
+    %1:gpr = ADD_S14_RRI %0, 64, implicit-def dead $psr
+    ST_W_L $r0, 0, %1
+    PseudoRET implicit $rets
+...
+
+
+# Leave speed-optimized functions' allocator choices unchanged.
+---
+name: speed_multiply
+tracksRegLiveness: true
+body: |
+  bb.0:
+    liveins: $r0, $r2, $r3
+    ; CHECK-LABEL: name: speed_multiply
+    ; CHECK: renamable $r1 = MUL_RRR killed renamable $r3, killed renamable $r2
+    %0:gpr = COPY $r3
+    %1:gpr = COPY $r2
+    %2:gpr = MUL_RRR %0, %1, implicit-def dead $psr
+    ST_W_L $r0, 0, %2
+    PseudoRET implicit $rets
+...
