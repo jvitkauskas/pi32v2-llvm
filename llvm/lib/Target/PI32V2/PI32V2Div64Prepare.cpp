@@ -57,8 +57,12 @@ bool PI32V2Div64Prepare::runOnFunction(Function &F) {
       if (!Signed && Opc != Instruction::UDiv && Opc != Instruction::URem)
         continue;
       Value *D = BO->getOperand(1);
-      if (isa<Constant>(D) || isa<ZExtInst>(D) || isa<SExtInst>(D))
-        continue; // already plain to instruction selection
+      // already plain to instruction selection (but a zero-extended divisor
+      // of a signed division must be seen to be non-negative: x / zext(y)
+      // with y known non-negative, which value tracking knows and the block
+      // by itself may not, is the hardware divide with the sign extension)
+      if (isa<Constant>(D) || isa<SExtInst>(D) || (isa<ZExtInst>(D) && !Signed))
+        continue;
       bool Fits =
           Signed ? ComputeNumSignBits(D, DL, nullptr, BO) >= 33
                  : computeKnownBits(D, DL, nullptr, BO).countMinLeadingZeros() >= 32;
