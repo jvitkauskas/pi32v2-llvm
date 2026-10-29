@@ -7,6 +7,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "PI32V2RegisterInfo.h"
+#include "MCTargetDesc/PI32V2BaseInfo.h"
 #include "MCTargetDesc/PI32V2MCTargetDesc.h"
 #include "PI32V2InstrInfo.h"
 #include "PI32V2Subtarget.h"
@@ -15,13 +16,98 @@
 #include "llvm/CodeGen/MachineInstrBuilder.h"
 #include "llvm/CodeGen/MachineRegisterInfo.h"
 #include "llvm/CodeGen/RegisterScavenging.h"
-#include <algorithm>
+#include "llvm/CodeGen/VirtRegMap.h"
+#include "llvm/MC/MCInst.h"
+#include "llvm/Support/CommandLine.h"
 #include "llvm/Support/ErrorHandling.h"
+#include "llvm/Support/MathExtras.h"
+#include <algorithm>
 
 #define GET_REGINFO_TARGET_DESC
 #include "PI32V2GenRegisterInfo.inc"
 
 using namespace llvm;
+
+static cl::opt<bool> EnableTwoAddrHints(
+    "pi32v2-twoaddr-hints", cl::Hidden, cl::init(true),
+    cl::desc("Prefer registers that enable PI32V2 two-address encodings"));
+
+static cl::opt<bool> EnableLowHints(
+    "pi32v2-low-hints", cl::Hidden, cl::init(true),
+    cl::desc("Prefer low registers for repeatedly compressible PI32V2 values"));
+
+// Test the actual compression rules with distinct representative registers.
+// Unallocated operands are optimistically low, but remain distinct so this
+// does not accidentally count two-address savings as low-register savings.
+static bool benefitsFromLowRegister(const MachineInstr &MI, Register VirtReg,
+                                    const PI32V2InstrInfo &TII,
+                                    const PI32V2RegisterInfo &TRI,
+                                    const VirtRegMap &VRM) {
+  if (MI.isPseudo() || MI.isInlineAsm() || MI.getDesc().getSize() <= 2)
+    return false;
+  SmallVector<std::pair<Register, Register>, 4> Regs;
+  unsigned Used = 0;
+  for (const MachineOperand &MO : MI.explicit_operands()) {
+    if (MO.isReg()) {
+      if (MO.getSubReg())
+        return false;
+      Register R = MO.getReg();
+      if (R == VirtReg)
+        continue;
+      Register P = R.isVirtual() ? Register(VRM.getPhys(R)) : R;
+      if (P) {
+        if (!PI32V2::GPRRegClass.contains(P))
+          return false;
+        Used |= 1u << TRI.getEncodingValue(P);
+      }
+      if (R.isVirtual() && !is_contained(Regs, std::pair(R, P)))
+        Regs.emplace_back(R, P);
+    } else if (!MO.isImm()) {
+      return false;
+    }
+  }
+  for (auto &[R, P] : Regs) {
+    if (P)
+      continue;
+    unsigned N = 0;
+    while (N != 8 && (Used & (1 << N)))
+      ++N;
+    if (N == 8)
+      return false;
+    P = PI32V2::R0 + N;
+    Used |= 1 << N;
+  }
+  unsigned Lo = 0, Hi = 8;
+  while (Lo != 8 && (Used & (1 << Lo)))
+    ++Lo;
+  while (Hi != 16 && (Used & (1 << Hi)))
+    ++Hi;
+  if (Lo == 8 || Hi == 16)
+    return false;
+  auto Size = [&](unsigned N) {
+    MCInst Inst;
+    Inst.setOpcode(MI.getOpcode());
+    for (const MachineOperand &MO : MI.explicit_operands()) {
+      if (MO.isImm()) {
+        Inst.addOperand(MCOperand::createImm(MO.getImm()));
+        continue;
+      }
+      Register R = MO.getReg();
+      if (R == VirtReg)
+        R = PI32V2::R0 + N;
+      else if (R.isVirtual())
+        for (auto [V, P] : Regs)
+          if (R == V) {
+            R = P;
+            break;
+          }
+      Inst.addOperand(MCOperand::createReg(R));
+    }
+    PI32V2::compressInst(Inst, TII, TRI);
+    return TII.get(Inst.getOpcode()).getSize();
+  };
+  return Size(Lo) < Size(Hi);
+}
 
 PI32V2RegisterInfo::PI32V2RegisterInfo() : PI32V2GenRegisterInfo(PI32V2::RETS) {}
 
@@ -52,6 +138,126 @@ BitVector PI32V2RegisterInfo::getReservedRegs(const MachineFunction &MF) const {
   if (MF.getSubtarget().getFrameLowering()->hasFP(MF))
     Reserved.set(PI32V2::R7); // the frame base (docs/ABI.md section 6.3)
   return Reserved;
+}
+
+bool PI32V2RegisterInfo::getRegAllocationHints(
+    Register VirtReg, ArrayRef<MCPhysReg> Order,
+    SmallVectorImpl<MCPhysReg> &Hints, const MachineFunction &MF,
+    const VirtRegMap *VRM, const LiveRegMatrix *Matrix) const {
+  bool Ret = TargetRegisterInfo::getRegAllocationHints(VirtReg, Order, Hints,
+                                                      MF, VRM, Matrix);
+  // Even soft preferences can affect greedy eviction and splitting. Keep the
+  // speed allocator's choices for functions not explicitly optimized for size.
+  if (!MF.getFunction().hasOptSize())
+    return Ret;
+  bool UseLowHints = EnableLowHints;
+  if (!VRM || (!EnableTwoAddrHints && !UseLowHints))
+    return Ret;
+
+  // Keep copy hints first. These are soft preferences: never introduce a copy
+  // or spill merely to obtain a shorter encoding. The MC compressor recognizes
+  // either source of the commutative operations, without an explicit commute.
+  SmallVector<MCPhysReg, 8> TwoAddrHints;
+  const MachineRegisterInfo &MRI = MF.getRegInfo();
+  const auto &TII = *MF.getSubtarget<PI32V2Subtarget>().getInstrInfo();
+  SmallVector<const MachineInstr *, 4> LowUses;
+  auto Phys = [&](const MachineOperand &MO) -> Register {
+    Register R = MO.getReg();
+    return R.isVirtual() ? Register(VRM->getPhys(R)) : R;
+  };
+  for (const MachineOperand &MO : MRI.reg_nodbg_operands(VirtReg)) {
+    if (MO.getSubReg() || MO.isImplicit())
+      continue;
+    const MachineInstr &MI = *MO.getParent();
+    if (UseLowHints && LowUses.size() < 2 &&
+        !is_contained(LowUses, &MI) &&
+        benefitsFromLowRegister(MI, VirtReg, TII, *this, *VRM))
+      LowUses.push_back(&MI);
+    if (!EnableTwoAddrHints)
+      continue;
+    unsigned Sources = 0;
+    bool Low = true;
+    switch (MI.getOpcode()) {
+    default:
+      continue;
+    case PI32V2::ADD_RRR_L:
+    case PI32V2::MUL_RRR:
+      // += and *= can use every GPR (unlike the three-address forms).
+      Low = false;
+      Sources = (1 << 1) | (1 << 2);
+      break;
+    case PI32V2::AND_RRR:
+    case PI32V2::OR_RRR:
+    case PI32V2::XOR_RRR:
+      Sources = (1 << 1) | (1 << 2);
+      break;
+    case PI32V2::LSL_RRR:
+    case PI32V2::LSR_RRR:
+    case PI32V2::ASR_RRR:
+      Sources = 1 << 1;
+      break;
+    case PI32V2::ADD_S14_RRI: {
+      int64_t Imm = MI.getOperand(2).getImm();
+      if (Imm < -128 || Imm > 127 || (Imm >= 0 && Imm < 32))
+        continue; // 0..31 also has a short three-address form.
+      Sources = 1 << 1;
+      break;
+    }
+    case PI32V2::AND_MODIMM_RRI:
+    case PI32V2::AND_NMODIMM_RRI:
+      if (!MI.getOperand(2).isImm() ||
+          !isPowerOf2_32(~uint32_t(MI.getOperand(2).getImm())))
+        continue;
+      Sources = 1 << 1;
+      break;
+    case PI32V2::OR_MODIMM_RRI:
+    case PI32V2::XOR_MODIMM_RRI:
+      if (!MI.getOperand(2).isImm() ||
+          !isPowerOf2_32(uint32_t(MI.getOperand(2).getImm())))
+        continue;
+      Sources = 1 << 1;
+      break;
+    }
+
+    unsigned Op = MO.getOperandNo();
+    for (unsigned Src = 1; Src <= 2; ++Src) {
+      if (!(Sources & (1 << Src)) || (Op != 0 && Op != Src))
+        continue;
+      const MachineOperand &Other = MI.getOperand(Op == 0 ? Src : 0);
+      if (Other.getSubReg())
+        continue;
+      Register R = Phys(Other);
+      if (!R || (Low && !PI32V2::GPRLoRegClass.contains(R)) ||
+          !is_contained(Order, R))
+        continue;
+      if (Low && MI.getOperand(2).isReg()) {
+        Register OtherSrc = Phys(MI.getOperand(Src == 1 ? 2 : 1));
+        if (OtherSrc && !PI32V2::GPRLoRegClass.contains(OtherSrc))
+          continue;
+      }
+      if (!is_contained(TwoAddrHints, R))
+        TwoAddrHints.push_back(R);
+    }
+  }
+  for (MCPhysReg R : Order)
+    if (is_contained(TwoAddrHints, R) && !is_contained(Hints, R))
+      Hints.push_back(R);
+  if (LowUses.size() >= 2) {
+    // A retained copy costs two bytes; two compact instructions can save
+    // four. Preserve low copy/two-address hints ahead of other low registers.
+    SmallVector<MCPhysReg, 16> NewHints;
+    for (MCPhysReg R : Hints)
+      if (PI32V2::GPRLoRegClass.contains(R))
+        NewHints.push_back(R);
+    for (MCPhysReg R : Order)
+      if (PI32V2::GPRLoRegClass.contains(R) && !is_contained(NewHints, R))
+        NewHints.push_back(R);
+    for (MCPhysReg R : Hints)
+      if (!is_contained(NewHints, R))
+        NewHints.push_back(R);
+    Hints.assign(NewHints.begin(), NewHints.end());
+  }
+  return Ret;
 }
 
 Register PI32V2RegisterInfo::getFrameRegister(const MachineFunction &MF) const {

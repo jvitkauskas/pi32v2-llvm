@@ -24,6 +24,11 @@ public:
   const uint32_t *getCallPreservedMask(const MachineFunction &MF,
                                        CallingConv::ID) const override;
   BitVector getReservedRegs(const MachineFunction &MF) const override;
+  bool getRegAllocationHints(Register VirtReg, ArrayRef<MCPhysReg> Order,
+                             SmallVectorImpl<MCPhysReg> &Hints,
+                             const MachineFunction &MF,
+                             const VirtRegMap *VRM = nullptr,
+                             const LiveRegMatrix *Matrix = nullptr) const override;
   bool requiresRegisterScavenging(const MachineFunction &MF) const override {
     return true;
   }
