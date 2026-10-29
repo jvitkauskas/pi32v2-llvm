@@ -2108,11 +2108,13 @@ void InlineCostCallAnalyzer::updateThreshold(CallBase &Call, Function &Callee) {
   int VectorBonusPercent = TTI.getInlinerVectorBonusPercent();
   int LastCallToStaticBonus = TTI.getInliningLastCallToStaticBonus();
 
-  // Lambda to set all the above bonus and bonus percentages to 0.
-  auto DisallowAllBonuses = [&]() {
+  // A target may prefer the size saving from removing the last call even in
+  // cold code. Keep the other bonuses disabled in that case.
+  auto DisallowColdBonuses = [&]() {
     SingleBBBonusPercent = 0;
     VectorBonusPercent = 0;
-    LastCallToStaticBonus = 0;
+    if (!TTI.useColdLastCallToStaticBonus(Call))
+      LastCallToStaticBonus = 0;
   };
 
   // Use the OptMinSizeThreshold or OptSizeThreshold knob if they are available
@@ -2159,11 +2161,11 @@ void InlineCostCallAnalyzer::updateThreshold(CallBase &Call, Function &Callee) {
       Threshold = *HotCallSiteThreshold;
     } else if (isColdCallSite(Call, CallerBFI)) {
       LLVM_DEBUG(dbgs() << "Cold callsite.\n");
-      // Do not apply bonuses for a cold callsite including the
-      // LastCallToStatic bonus. While this bonus might result in code size
+      // Normally do not apply bonuses for a cold callsite, including the
+      // last-call-to-static bonus. While this bonus might result in code size
       // reduction, it can cause the size of a non-cold caller to increase
       // preventing it from being inlined.
-      DisallowAllBonuses();
+      DisallowColdBonuses();
       Threshold = MinIfValid(Threshold, Params.ColdCallSiteThreshold);
     } else if (PSI) {
       // Use callee's global profile information only if we have no way of
@@ -2176,11 +2178,11 @@ void InlineCostCallAnalyzer::updateThreshold(CallBase &Call, Function &Callee) {
         Threshold = MaxIfValid(Threshold, CalleeHintThreshold);
       } else if (PSI->isFunctionEntryCold(&Callee)) {
         LLVM_DEBUG(dbgs() << "Cold callee.\n");
-        // Do not apply bonuses for a cold callee including the
-        // LastCallToStatic bonus. While this bonus might result in code size
+        // Normally do not apply bonuses for a cold callee, including the
+        // last-call-to-static bonus. While this bonus might result in code size
         // reduction, it can cause the size of a non-cold caller to increase
         // preventing it from being inlined.
-        DisallowAllBonuses();
+        DisallowColdBonuses();
         Threshold = MinIfValid(Threshold, Params.ColdThreshold);
       }
     }

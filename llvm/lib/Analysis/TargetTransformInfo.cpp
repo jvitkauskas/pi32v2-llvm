@@ -233,6 +233,10 @@ int TargetTransformInfo::getInliningLastCallToStaticBonus() const {
   return TTIImpl->getInliningLastCallToStaticBonus();
 }
 
+bool TargetTransformInfo::useColdLastCallToStaticBonus(const CallBase &CB) const {
+  return TTIImpl->useColdLastCallToStaticBonus(CB);
+}
+
 unsigned
 TargetTransformInfo::adjustInliningThreshold(const CallBase *CB) const {
   return TTIImpl->adjustInliningThreshold(CB);

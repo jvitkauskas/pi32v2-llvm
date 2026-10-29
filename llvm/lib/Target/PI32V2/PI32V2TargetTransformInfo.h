@@ -62,6 +62,13 @@ public:
     return Caller && Caller->hasOptSize() ? std::min(Threshold, 300) : Threshold;
   }
 
+  // Removing a sole local callee saves its call/return and argument setup even
+  // on a cold path. Prefer this when optimizing the caller for size, without
+  // raising the cold threshold or encouraging duplication of shared helpers.
+  bool useColdLastCallToStaticBonus(const CallBase &CB) const override {
+    return CB.getCaller()->hasOptSize();
+  }
+
   // What inlining saves by removing a call: little here (a 2- or 4-byte call),
   // LLVM's default (25, five instructions) inlines helpers like a GPIO write
   // into every caller. 5 is the best for m-bootloader at -Oz (LTO).

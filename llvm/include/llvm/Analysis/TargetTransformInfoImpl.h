@@ -103,6 +103,9 @@ public:
   virtual unsigned adjustInliningThreshold(const CallBase *CB) const {
     return 0;
   }
+  virtual bool useColdLastCallToStaticBonus(const CallBase &CB) const {
+    return false;
+  }
   virtual int adjustInlineHintThreshold(const CallBase *CB, int Threshold) const {
     return Threshold;
   }
