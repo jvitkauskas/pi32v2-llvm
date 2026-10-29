@@ -31,6 +31,7 @@ public:
   }
 
   void Select(SDNode *N) override;
+  bool tryInsert(SDNode *N);
 
   // A stack slot, plus a constant.
   bool selectAddrFI(SDValue Addr, SDValue &Base, SDValue &Off);
@@ -170,6 +171,93 @@ bool PI32V2DAGToDAGISel::selectAddr(SDValue Addr, SDValue &Base, SDValue &Off,
   return true;
 }
 
+// (a & ~M) | Y with M one run of bits and Y inside it: a field insert,
+// `a <= insert(s, p:position, l:length)`, 4 bytes where the mask, the shift
+// and the or take 6 or more. The value is the low l bits of s, so the shift of
+// the field into place and its mask are not needed.
+bool PI32V2DAGToDAGISel::tryInsert(SDNode *N) {
+  if (N->getValueType(0) != MVT::i32)
+    return false;
+  for (unsigned I = 0; I < 2; ++I) {
+    SDValue X = N->getOperand(I), Y = N->getOperand(1 - I);
+    if (X.getOpcode() != ISD::AND || !isa<ConstantSDNode>(X.getOperand(1)))
+      continue;
+    uint32_t M = ~uint32_t(X.getConstantOperandVal(1));
+    if (!M || !isShiftedMask_32(M))
+      continue;
+    unsigned P = llvm::countr_zero(M), L = llvm::popcount(M);
+    // a whole top part, from P to the end, is a zero extension and a shift
+    // and an or just as well; a one-bit field is an or and a mask
+    if (P + L >= 32 || L < 2 || !CurDAG->MaskedValueIsZero(Y, APInt(32, ~M)))
+      continue;
+    // The field of Y at P: a shift left by P gives the value itself, an and
+    // that keeps the field's bits is no change to it.
+    SDValue S = Y;
+    if (S.getOpcode() == ISD::AND && isa<ConstantSDNode>(S.getOperand(1)) &&
+        (uint32_t(S.getConstantOperandVal(1)) & M) == M)
+      S = S.getOperand(0);
+    SDLoc DL(N);
+    if (P == 0) {
+      // the low L bits of S go in
+    } else if (S.getOpcode() == ISD::SHL &&
+               isa<ConstantSDNode>(S.getOperand(1)) &&
+               S.getConstantOperandVal(1) == P) {
+      S = S.getOperand(0);
+    } else {
+      S = SDValue(CurDAG->getMachineNode(
+                      PI32V2::LSR_RRI_L, DL, MVT::i32, S,
+                      CurDAG->getTargetConstant(P, DL, MVT::i32)),
+                  0);
+    }
+    SDValue Ops[] = {X.getOperand(0), S,
+                     CurDAG->getTargetConstant(P, DL, MVT::i32),
+                     CurDAG->getTargetConstant(L, DL, MVT::i32)};
+    ReplaceNode(N, CurDAG->getMachineNode(PI32V2::INSERT_RRII, DL, MVT::i32,
+                                          Ops));
+    return true;
+  }
+  // X | field: the field of Y, masked to its width, into zero bits of X
+  // (`(b & 0x7f) << 7`, `(b << 7) & 0x3f80`): the mask is not needed
+  for (unsigned I = 0; I < 2; ++I) {
+    SDValue X = N->getOperand(I), Y = N->getOperand(1 - I);
+    SDValue B;
+    uint32_t M = 0;
+    unsigned P = 0;
+    if (Y.getOpcode() == ISD::AND && isa<ConstantSDNode>(Y.getOperand(1)) &&
+        Y.getOperand(0).getOpcode() == ISD::SHL &&
+        isa<ConstantSDNode>(Y.getOperand(0).getOperand(1))) {
+      M = Y.getConstantOperandVal(1);
+      P = Y.getOperand(0).getConstantOperandVal(1);
+      B = Y.getOperand(0).getOperand(0);
+    } else if (Y.getOpcode() == ISD::SHL &&
+               isa<ConstantSDNode>(Y.getOperand(1)) &&
+               Y.getOperand(0).getOpcode() == ISD::AND &&
+               isa<ConstantSDNode>(Y.getOperand(0).getOperand(1))) {
+      P = Y.getConstantOperandVal(1);
+      uint32_t Low = Y.getOperand(0).getConstantOperandVal(1);
+      if (P >= 32 || !isMask_32(Low))
+        continue;
+      M = Low << P; // (the bits shifted out do not matter)
+      B = Y.getOperand(0).getOperand(0);
+      if (popcount(Low) + P > 32)
+        continue;
+    } else
+      continue;
+    if (!M || !isShiftedMask_32(M) || P >= 32 || llvm::countr_zero(M) != P)
+      continue;
+    unsigned L = llvm::popcount(M);
+    if (P + L >= 32 || L < 2 || !CurDAG->MaskedValueIsZero(X, APInt(32, M)))
+      continue;
+    SDLoc DL(N);
+    SDValue Ops[] = {X, B, CurDAG->getTargetConstant(P, DL, MVT::i32),
+                     CurDAG->getTargetConstant(L, DL, MVT::i32)};
+    ReplaceNode(N, CurDAG->getMachineNode(PI32V2::INSERT_RRII, DL, MVT::i32,
+                                          Ops));
+    return true;
+  }
+  return false;
+}
+
 void PI32V2DAGToDAGISel::Select(SDNode *N) {
   if (N->isMachineOpcode()) {
     N->setNodeId(-1);
@@ -285,5 +373,7 @@ void PI32V2DAGToDAGISel::Select(SDNode *N) {
     CurDAG->RemoveDeadNode(N);
     return;
   }
+  if (N->getOpcode() == ISD::OR && tryInsert(N))
+    return;
   SelectCode(N);
 }

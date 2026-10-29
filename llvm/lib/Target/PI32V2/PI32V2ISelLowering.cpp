@@ -88,6 +88,7 @@ PI32V2TargetLowering::PI32V2TargetLowering(const TargetMachine &TM,
                       ISD::UMUL_LOHI, ISD::SMUL_LOHI, ISD::SMIN, ISD::SMAX,
                       ISD::UMIN, ISD::UMAX})
     setOperationAction(Op, MVT::i32, Legal);
+  setOperationAction(ISD::ABS_MIN_POISON, MVT::i32, Legal);
   for (MVT VT : {MVT::i8, MVT::i16, MVT::i32}) {
     setIndexedLoadAction(ISD::POST_INC, VT, Legal);
     setIndexedStoreAction(ISD::POST_INC, VT, Legal);
