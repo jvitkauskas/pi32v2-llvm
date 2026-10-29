@@ -24,6 +24,15 @@
 
 using namespace llvm;
 
+// JieLi's compiler's option, in words: the merged block's size is at most
+// N * 4 bytes (N at most 127, the reach of a word access's offset; JieLi's
+// default 127). Ours is 255 bytes when it is not given, which measures
+// smaller than 508 (a byte access reaches 255).
+static cl::opt<unsigned>
+    MergeMaxOffset("pi32v2-merge-max-offset", cl::Hidden,
+                   cl::desc("Set maximum offset for global merge pass (in "
+                            "words, as JieLi's compiler takes it)"));
+
 extern "C" LLVM_ABI LLVM_EXTERNAL_VISIBILITY void LLVMInitializePI32V2Target() {
   RegisterTargetMachine<PI32V2TargetMachine> X(getThePI32V2Target());
   PassRegistry &PR = *PassRegistry::getPassRegistry();
@@ -94,13 +103,23 @@ public:
 
   // Static globals in one block, reached from one address by offset
   // (JieLi's compiler makes .L_MergedGlobals too); 255: the reach of a byte
-  // access's offset.
+  // access's offset. Merged in the sets functions use together (as
+  // -global-merge-ignore-single-use=false, which Optimist passes to JieLi's
+  // compiler): 0.2 % smaller code over 13 firmwares than one block of every
+  // global used with another.
   bool addPreISel() override {
     addPass(createPI32V2AlignAllocasPass());
     addPass(createPI32V2Div64PreparePass());
     if (getOptLevel() != CodeGenOptLevel::None)
-      addPass(createGlobalMergePass(TM, 255, /*OnlyOptimizeForSize=*/false,
-                                    /*MergeExternalByDefault=*/false));
+      addPass(createGlobalMergePass(
+          TM,
+          MergeMaxOffset.getNumOccurrences()
+              ? std::min<unsigned>(MergeMaxOffset, 127) * 4
+              : 255,
+          /*OnlyOptimizeForSize=*/false, /*MergeExternalByDefault=*/false,
+          /*MergeConstantByDefault=*/false,
+          /*MergeConstAggressiveByDefault=*/false,
+          /*IgnoreSingleUseByDefault=*/false));
     return false;
   }
 

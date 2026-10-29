@@ -519,7 +519,8 @@ createGlobalMergePass(const TargetMachine *TM, unsigned MaximalOffset,
                       bool OnlyOptimizeForSize = false,
                       bool MergeExternalByDefault = false,
                       bool MergeConstantByDefault = false,
-                      bool MergeConstAggressiveByDefault = false);
+                      bool MergeConstAggressiveByDefault = false,
+                      bool IgnoreSingleUseByDefault = true);
 
 /// This pass splits the stack into a safe stack and an unsafe stack to
 /// protect against stack-based overflow vulnerabilities.
