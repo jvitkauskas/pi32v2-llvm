@@ -1,4 +1,4 @@
-# RUN: llc -mtriple=pi32v2 -run-pass=pi32v2-size-reduce -pi32v2-global-recolor=false -verify-machineinstrs %s -o - | FileCheck %s
+# RUN: llc -mtriple=pi32v2 -run-pass=pi32v2-size-reduce -pi32v2-global-recolor=false -pi32v2-crossblock-recolor=false -verify-machineinstrs %s -o - | FileCheck %s
 # RUN: llc -mtriple=pi32v2 -run-pass=pi32v2-size-reduce -pi32v2-enable-size-reduce=false -verify-machineinstrs %s -o - | FileCheck %s --check-prefix=DISABLED
 # RUN: llc -mtriple=pi32v2 -run-pass=pi32v2-size-reduce -verify-machineinstrs %s -o - | FileCheck %s --check-prefix=GLOBAL
 
