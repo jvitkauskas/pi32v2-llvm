@@ -22,6 +22,7 @@
 #include "llvm/Analysis/TargetTransformInfo.h"
 #include "llvm/CodeGen/BasicTTIImpl.h"
 #include "llvm/Support/MathExtras.h"
+#include <algorithm>
 
 namespace llvm {
 class PI32V2TTIImpl final : public BasicTTIImplBase<PI32V2TTIImpl> {
@@ -49,6 +50,16 @@ public:
     const Function *Caller = CB->getCaller();
     bool Size = Caller && Caller->hasOptSize() && !Caller->hasMinSize();
     return Size ? static_cast<unsigned>(-40) : 0;
+  }
+
+  // Keep a source-level inline hint from duplicating large helpers in size
+  // optimized functions. Calls are cheap on PI32V2; the generic hint threshold
+  // admits helpers that are much larger than their call and argument setup.
+  // Keep the adjustment modest so that hints still help hot size-mode code.
+  // minsize already ignores hints, and ordinary -O2 keeps the generic policy.
+  int adjustInlineHintThreshold(const CallBase *CB, int Threshold) const override {
+    const Function *Caller = CB->getCaller();
+    return Caller && Caller->hasOptSize() ? std::min(Threshold, 300) : Threshold;
   }
 
   // What inlining saves by removing a call: little here (a 2- or 4-byte call),
