@@ -431,6 +431,11 @@ public:
   /// \returns A value to be added to the inlining threshold.
   LLVM_ABI unsigned adjustInliningThreshold(const CallBase *CB) const;
 
+  /// Adjust the threshold supplied by an inline hint at this call site.
+  /// This is applied before call-site coldness and the usual target threshold
+  /// adjustment. An explicit -inlinehint-threshold overrides this hook.
+  LLVM_ABI int adjustInlineHintThreshold(const CallBase *CB, int Threshold) const;
+
   /// \returns The cost of having an Alloca in the caller if not inlined, to be
   /// added to the threshold
   LLVM_ABI unsigned getCallerAllocaCost(const CallBase *CB,
