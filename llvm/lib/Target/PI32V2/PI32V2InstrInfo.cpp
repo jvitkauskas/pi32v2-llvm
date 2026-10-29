@@ -32,21 +32,24 @@ void PI32V2InstrInfo::copyPhysReg(MachineBasicBlock &MBB,
                                   bool RenamableDest, bool RenamableSrc) const {
   bool DG = PI32V2::GPRRegClass.contains(Dst),
        SG = PI32V2::GPRRegClass.contains(Src);
+  MachineInstrBuilder Copy;
   if (DG && SG)
-    BuildMI(MBB, I, DL, get(PI32V2::MOV_RR), Dst)
+    Copy = BuildMI(MBB, I, DL, get(PI32V2::MOV_RR), Dst)
         .addReg(Src, getKillRegState(KillSrc));
   else if (PI32V2::GPRPairRegClass.contains(Dst) &&
            PI32V2::GPRPairRegClass.contains(Src))
-    BuildMI(MBB, I, DL, get(PI32V2::MOV_PAIR), Dst)
+    Copy = BuildMI(MBB, I, DL, get(PI32V2::MOV_PAIR), Dst)
         .addReg(Src, getKillRegState(KillSrc));
   else if (DG && PI32V2::SRRegClass.contains(Src))
-    BuildMI(MBB, I, DL, get(PI32V2::MOV_R_SR), Dst)
+    Copy = BuildMI(MBB, I, DL, get(PI32V2::MOV_R_SR), Dst)
         .addReg(Src, getKillRegState(KillSrc));
   else if (SG && PI32V2::SRRegClass.contains(Dst))
-    BuildMI(MBB, I, DL, get(PI32V2::MOV_SR_R), Dst)
+    Copy = BuildMI(MBB, I, DL, get(PI32V2::MOV_SR_R), Dst)
         .addReg(Src, getKillRegState(KillSrc));
   else
     report_fatal_error("PI32V2: impossible register copy");
+  Copy->getOperand(0).setIsRenamable(RenamableDest);
+  Copy->getOperand(1).setIsRenamable(RenamableSrc);
 }
 
 static MachineMemOperand *frameMMO(MachineBasicBlock &MBB, int FI,
