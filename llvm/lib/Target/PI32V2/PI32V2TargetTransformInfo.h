@@ -59,6 +59,12 @@ public:
     return F && F->hasOptSize() ? 5 : DefaultCallPenalty;
   }
 
+  // Loads and stores with the base stepped after them ([b++=n]).
+  TTI::AddressingModeKind
+  getPreferredAddressingMode(const Loop *L, ScalarEvolution *SE) const override {
+    return TTI::AMK_PostIndexed;
+  }
+
   InstructionCost getIntImmCost(const APInt &Imm, Type *Ty,
                                 TTI::TargetCostKind CostKind) const override {
     unsigned Bits = Ty->getPrimitiveSizeInBits();

@@ -88,13 +88,18 @@ PI32V2TargetLowering::PI32V2TargetLowering(const TargetMachine &TM,
                       ISD::UMUL_LOHI, ISD::SMUL_LOHI, ISD::SMIN, ISD::SMAX,
                       ISD::UMIN, ISD::UMAX})
     setOperationAction(Op, MVT::i32, Legal);
+  setOperationAction(ISD::ABS_MIN_POISON, MVT::i32, Legal);
   for (MVT VT : {MVT::i8, MVT::i16, MVT::i32}) {
-    setIndexedLoadAction(ISD::POST_INC, VT, Legal);
-    setIndexedStoreAction(ISD::POST_INC, VT, Legal);
+    for (ISD::MemIndexedMode M : {ISD::POST_INC, ISD::PRE_INC}) {
+      setIndexedLoadAction(M, VT, Legal);
+      setIndexedStoreAction(M, VT, Legal);
+    }
   }
   if (STI.hasFPRev1()) {
-    setIndexedLoadAction(ISD::POST_INC, MVT::f32, Legal);
-    setIndexedStoreAction(ISD::POST_INC, MVT::f32, Legal);
+    for (ISD::MemIndexedMode M : {ISD::POST_INC, ISD::PRE_INC}) {
+      setIndexedLoadAction(M, MVT::f32, Legal);
+      setIndexedStoreAction(M, MVT::f32, Legal);
+    }
   }
   // A 64-bit division by a divisor that fits in 32 bits is div.u.ppr or
   // div.s.ppr (ReplaceNodeResults); others are library calls.
@@ -423,9 +428,8 @@ void PI32V2TargetLowering::ReplaceNodeResults(SDNode *N,
                   DAG.getNode(ISD::MUL, DL, MVT::i64, Q64, D)));
 }
 
-bool PI32V2TargetLowering::getPostIndexedAddressParts(
-    SDNode *N, SDNode *Op, SDValue &Base, SDValue &Offset,
-    ISD::MemIndexedMode &AM, SelectionDAG &DAG) const {
+static bool indexedParts(SDNode *N, SDNode *Op, SDValue &Base,
+                         SDValue &Offset) {
   EVT VT;
   if (auto *LD = dyn_cast<LoadSDNode>(N))
     VT = LD->getMemoryVT();
@@ -444,8 +448,47 @@ bool PI32V2TargetLowering::getPostIndexedAddressParts(
     return false;
   Base = Op->getOperand(0);
   Offset = Op->getOperand(1);
-  AM = ISD::POST_INC;
   return true;
+}
+
+bool PI32V2TargetLowering::getPostIndexedAddressParts(
+    SDNode *N, SDNode *Op, SDValue &Base, SDValue &Offset,
+    ISD::MemIndexedMode &AM, SelectionDAG &DAG) const {
+  AM = ISD::POST_INC;
+  return indexedParts(N, Op, Base, Offset);
+}
+
+bool PI32V2TargetLowering::getPreIndexedAddressParts(
+    SDNode *N, SDValue &Base, SDValue &Offset, ISD::MemIndexedMode &AM,
+    SelectionDAG &DAG) const {
+  SDValue Ptr = N->getOpcode() == ISD::LOAD
+                    ? cast<LoadSDNode>(N)->getBasePtr()
+                    : cast<StoreSDNode>(N)->getBasePtr();
+  AM = ISD::PRE_INC;
+  return Ptr->getOpcode() == ISD::ADD && indexedParts(N, Ptr.getNode(), Base, Offset);
+}
+
+bool PI32V2TargetLowering::isLegalAddressingMode(const DataLayout &DL,
+                                                 const AddrMode &AM, Type *Ty,
+                                                 unsigned AS,
+                                                 Instruction *I) const {
+  if (AM.BaseGV)
+    return false; // an address is a li of its own
+  uint64_t Size = Ty && Ty->isSized() ? DL.getTypeStoreSize(Ty) : 4;
+  int64_t Unit = Size >= 4 ? 4 : Size; // (a pair is two words)
+  if (Unit != 1 && Unit != 2 && Unit != 4)
+    return false;
+  unsigned Regs = AM.HasBaseReg;
+  if (AM.Scale == 1)
+    ++Regs;
+  else if (AM.Scale == Unit && Unit != 1 && Size == uint64_t(Unit)) {
+    // [b+i<<1], [b+i<<2]: no offset
+    return AM.HasBaseReg && AM.BaseOffs == 0;
+  } else if (AM.Scale != 0)
+    return false;
+  if (Regs > 1)
+    return AM.BaseOffs == 0; // [b+i]
+  return AM.BaseOffs % Unit == 0 && isInt<9>(AM.BaseOffs / Unit);
 }
 
 EVT PI32V2TargetLowering::getOptimalMemOpType(
