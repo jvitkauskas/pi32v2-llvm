@@ -206,9 +206,11 @@ public:
 
   explicit GlobalMerge(const TargetMachine *TM, unsigned MaximalOffset,
                        bool OnlyOptimizeForSize, bool MergeExternalGlobals,
-                       bool MergeConstantGlobals, bool MergeConstAggressive)
+                       bool MergeConstantGlobals, bool MergeConstAggressive,
+                       bool IgnoreSingleUse)
       : FunctionPass(ID), TM(TM) {
     Opt.MaxOffset = MaximalOffset;
+    Opt.IgnoreSingleUse = IgnoreSingleUse;
     Opt.SizeOnly = OnlyOptimizeForSize;
     Opt.MergeExternal = MergeExternalGlobals;
     Opt.MergeConstantGlobals = MergeConstantGlobals;
@@ -426,7 +428,8 @@ bool GlobalMergeImpl::doMerge(SmallVectorImpl<GlobalVariable *> &Globals,
   // We can choose to merge all globals together, but ignore globals never used
   // with another global.  This catches the obviously non-profitable cases of
   // having a single global, but is aggressive enough for any other case.
-  if (GlobalMergeIgnoreSingleUse) {
+  if (GlobalMergeIgnoreSingleUse.getNumOccurrences() ? GlobalMergeIgnoreSingleUse
+                                                     : Opt.IgnoreSingleUse) {
     BitVector AllGlobals(Globals.size());
     for (const UsedGlobalSet &UGS : UsedGlobalSets) {
       if (UGS.UsageCount == 0)
@@ -776,7 +779,8 @@ Pass *llvm::createGlobalMergePass(const TargetMachine *TM, unsigned Offset,
                                   bool OnlyOptimizeForSize,
                                   bool MergeExternalByDefault,
                                   bool MergeConstantByDefault,
-                                  bool MergeConstAggressiveByDefault) {
+                                  bool MergeConstAggressiveByDefault,
+                                  bool IgnoreSingleUseByDefault) {
   bool MergeExternal =
       (EnableGlobalMergeOnExternal == cl::boolOrDefault::BOU_UNSET)
           ? MergeExternalByDefault
@@ -789,5 +793,6 @@ Pass *llvm::createGlobalMergePass(const TargetMachine *TM, unsigned Offset,
                               ? GlobalMergeMaxOffset
                               : Offset;
   return new GlobalMerge(TM, PreferOffset, OnlyOptimizeForSize, MergeExternal,
-                         MergeConstant, MergeConstAggressive);
+                         MergeConstant, MergeConstAggressive,
+                         IgnoreSingleUseByDefault);
 }
