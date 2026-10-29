@@ -164,3 +164,13 @@ ifs(--r10!=0)goto 1b
 ifs (--r3 != 0) goto 1b
 # CHECK: if (--r3 != 0) goto
 # OBJ: 03 ea fb ff{{ *}}if (--r3 != 0) goto
+
+# `rD = ~rS` where the 2-byte not cannot name a register: an xor with all ones.
+r1 = ~r2
+# CHECK: r1 = ~r2 ; encoding: [0xa9,0x19]
+r9 = ~r8
+# CHECK: r9 = r8 ^ 0xFFFFFFFF ; encoding: [0x59,0xe1,0xff,0x83]
+r3 = ~r12
+# CHECK: r3 = r12 ^ 0xFFFFFFFF ; encoding: [0x53,0xe1,0xff,0xc3]
+r12 = ~r3
+# CHECK: r12 = r3 ^ 0xFFFFFFFF ; encoding: [0x5c,0xe1,0xff,0x33]
