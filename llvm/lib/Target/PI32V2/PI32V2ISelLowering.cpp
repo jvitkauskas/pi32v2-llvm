@@ -54,6 +54,12 @@ PI32V2TargetLowering::PI32V2TargetLowering(const TargetMachine &TM,
   setBooleanContents(ZeroOrOneBooleanContent);
   setMinFunctionAlignment(Align(2));
   setPrefFunctionAlignment(Align(2));
+  // A memset of a constant size is stores up to JieLi's limits, 8 at -Os and
+  // 16 at -O2 (32 and 64 bytes of words; memcpy and memmove are inline at
+  // least as far as there). Firmware runs code from RAM that must not call
+  // into flash, memset included, and relies on these being stores.
+  MaxStoresPerMemsetOptSize = 8;
+  MaxStoresPerMemset = 16;
   // Atomics: read-modify-write operations are __sync_* calls, as JieLi's
   // compiler makes them (the runtime provides them); an aligned load or store
   // of up to a word is one access; a fence is csync.
