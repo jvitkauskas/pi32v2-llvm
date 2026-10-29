@@ -39,6 +39,10 @@ static cl::opt<bool> EnablePseudoCosting(
     "pi32v2-recolor-pseudos", cl::Hidden, cl::init(true),
     cl::desc("Cost PI32V2 pseudo expansions during register recoloring"));
 
+static cl::opt<bool> EnableCrossBlockRecolor(
+    "pi32v2-crossblock-recolor", cl::Hidden, cl::init(true),
+    cl::desc("Recolor connected PI32V2 physical live ranges without copies"));
+
 static unsigned postOpcode(unsigned Opc, unsigned &Skip) {
   Skip = 1;
   switch (Opc) {
@@ -157,6 +161,7 @@ private:
   unsigned encodedSize(const MachineInstr &MI, Register From = Register(),
                        Register To = Register(), bool Swap = false) const;
   bool recolorCalleeSaved(MachineFunction &MF);
+  bool recolorRegions(MachineFunction &MF);
   Register recolor(MachineInstr &Def, Register From, const LiveRegUnits &Live,
                    const LiveRegUnits &LiveOut);
 };
@@ -477,6 +482,127 @@ Register PI32V2SizeReduce::recolor(MachineInstr &Def, Register From,
   return Best;
 }
 
+// Rename a register throughout a connected region of blocks. Every live-in
+// edge stays inside the region, and the destination must be dead and untouched
+// in every block. This deliberately avoids live-range splitting and copies.
+bool PI32V2SizeReduce::recolorRegions(MachineFunction &MF) {
+  bool Changed = false;
+  auto IsLiveIn = [&](const MachineBasicBlock &MBB, Register R) {
+    return any_of(MBB.liveins(), [&](auto LI) {
+      return TRI->regsOverlap(LI.PhysReg, R);
+    });
+  };
+  for (Register From : PI32V2::GPRHiRegClass) {
+    SmallPtrSet<MachineBasicBlock *, 32> Seen;
+    for (MachineBasicBlock &Start : MF) {
+      if (Seen.contains(&Start))
+        continue;
+      SmallVector<MachineBasicBlock *, 16> Region{&Start};
+      Seen.insert(&Start);
+      for (unsigned I = 0; I != Region.size(); ++I) {
+        MachineBasicBlock &B = *Region[I];
+        auto Add = [&](MachineBasicBlock *Next) {
+          if (Seen.insert(Next).second)
+            Region.push_back(Next);
+        };
+        for (MachineBasicBlock *Succ : B.successors())
+          if (IsLiveIn(*Succ, From))
+            Add(Succ);
+        if (IsLiveIn(B, From))
+          for (MachineBasicBlock *Pred : B.predecessors())
+            Add(Pred);
+      }
+      if (is_contained(Region, &MF.front()) && IsLiveIn(MF.front(), From))
+        continue;
+      SmallVector<MachineOperand *, 32> Operands;
+      LiveRegUnits Unavailable(*TRI);
+      unsigned OldSize = 0;
+      bool Legal = true;
+      for (MachineBasicBlock *B : Region) {
+        for (auto LI : B->liveins())
+          if (Register(LI.PhysReg) != From &&
+              TRI->regsOverlap(LI.PhysReg, From))
+            Legal = false;
+        Unavailable.addLiveIns(*B);
+        Unavailable.addLiveOuts(*B);
+        for (MachineInstr &MI : *B) {
+          if (!MI.isDebugInstr())
+            Unavailable.accumulate(MI);
+          bool Affected = false;
+          for (MachineOperand &MO : MI.operands()) {
+            if (MO.isRegMask() && MO.clobbersPhysReg(From))
+              Legal = false;
+            if (!MO.isReg() || !MO.getReg() ||
+                !TRI->regsOverlap(MO.getReg(), From))
+              continue;
+            if (MO.getReg() != From ||
+                (!MI.isDebugInstr() &&
+                 (!MO.isRenamable() || MO.isImplicit() || MO.getSubReg() ||
+                  MI.isInlineAsm() ||
+                  (MI.isPseudo() && !isCostedPseudo(MI, *TRI)))))
+              Legal = false;
+            Operands.push_back(&MO);
+            Affected = true;
+          }
+          if (Affected)
+            OldSize += encodedSize(MI);
+        }
+      }
+      if (!Legal || Operands.empty())
+        continue;
+      Register Best;
+      unsigned BestSize = OldSize;
+      for (Register To : PI32V2::GPRLoRegClass) {
+        if (MF.getRegInfo().isReserved(To) || !Unavailable.available(To))
+          continue;
+        if (To >= PI32V2::R4 &&
+            none_of(MF.getFrameInfo().getCalleeSavedInfo(),
+                    [&](const CalleeSavedInfo &CSI) {
+                      return TRI->regsOverlap(CSI.getReg(), To);
+                    }))
+          continue;
+        bool Fits = true;
+        SmallPtrSet<MachineInstr *, 32> Instructions;
+        unsigned Size = 0;
+        for (MachineOperand *MO : Operands) {
+          MachineInstr &MI = *MO->getParent();
+          if (!MI.isDebugInstr()) {
+            const TargetRegisterClass *RC =
+                TII->getRegClass(MI.getDesc(), MO->getOperandNo());
+            if (RC && !RC->contains(To)) {
+              Fits = false;
+              break;
+            }
+          }
+          if (Instructions.insert(&MI).second)
+            Size += encodedSize(MI, From, To);
+        }
+        if (Fits && Size < BestSize) {
+          Best = To;
+          BestSize = Size;
+        }
+      }
+      if (!Best)
+        continue;
+      for (MachineOperand *MO : Operands) {
+        bool Renamable = MO->isRenamable();
+        MO->setReg(Best);
+        MO->setIsRenamable(Renamable);
+      }
+      for (MachineBasicBlock *B : Region) {
+        std::vector<MachineBasicBlock::RegisterMaskPair> OldLiveIns;
+        B->clearLiveIns(OldLiveIns);
+        for (auto LI : OldLiveIns)
+          B->addLiveIn(Register(LI.PhysReg) == From ? Best : Register(LI.PhysReg),
+                       LI.LaneMask);
+        B->sortUniqueLiveIns();
+      }
+      Changed = true;
+    }
+  }
+  return Changed;
+}
+
 bool PI32V2SizeReduce::runOnMachineFunction(MachineFunction &MF) {
   if (!EnableSizeReduce || skipFunction(MF.getFunction()))
     return false;
@@ -492,6 +618,8 @@ bool PI32V2SizeReduce::runOnMachineFunction(MachineFunction &MF) {
   // two loop paths can be duplicated into both successors by a later pass.
   if (RunStage == Global)
     return Changed;
+  if (EnableCrossBlockRecolor)
+    Changed |= recolorRegions(MF);
   for (MachineBasicBlock &MBB : MF) {
     LiveRegUnits LiveOut(*TRI);
     LiveOut.addLiveOuts(MBB);

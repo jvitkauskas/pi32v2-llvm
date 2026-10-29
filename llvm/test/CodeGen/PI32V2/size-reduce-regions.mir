@@ -1,0 +1,59 @@
+# RUN: llc -mtriple=pi32v2 -run-pass=pi32v2-size-reduce -pi32v2-global-recolor=false -verify-machineinstrs %s -o - | FileCheck %s
+# RUN: llc -mtriple=pi32v2 -run-pass=pi32v2-size-reduce -pi32v2-global-recolor=false -pi32v2-crossblock-recolor=false -verify-machineinstrs %s -o - | FileCheck %s --check-prefix=DISABLED
+--- |
+  define void @connected_loop() { ret void }
+  define void @live_low() { ret void }
+...
+---
+name: connected_loop
+tracksRegLiveness: true
+body: |
+  bb.0:
+    successors: %bb.1
+    liveins: $r0
+    ; CHECK-LABEL: name: connected_loop
+    ; CHECK: renamable $r1 = LI_S16 255
+    ; CHECK-NEXT: GOTO_S %bb.1
+    ; DISABLED-LABEL: name: connected_loop
+    ; DISABLED: renamable $r8 = LI_S16 255
+    renamable $r8 = LI_S16 255
+    GOTO_S %bb.1
+  bb.1:
+    successors: %bb.1
+    liveins: $r0, $r8
+    ; CHECK: bb.1:
+    ; CHECK-NEXT: successors: %bb.1
+    ; CHECK: liveins: $r0, $r1
+    ; CHECK: renamable $r1 = ADD_S14_RRI renamable $r1, 64
+    ; CHECK-NEXT: ST_W_L $r0, 0, renamable $r1
+    ; CHECK-NEXT: GOTO_S %bb.1
+    renamable $r8 = ADD_S14_RRI renamable $r8, 64, implicit-def dead $psr
+    ST_W_L $r0, 0, renamable $r8
+    GOTO_S %bb.1
+...
+
+# All low registers are live across the connected value. Do not split it or
+# add copies to make a low register available on either side of the edge.
+---
+name: live_low
+tracksRegLiveness: true
+body: |
+  bb.0:
+    successors: %bb.1
+    liveins: $r0, $r1, $r2, $r3, $r4, $r5, $r6, $r7
+    ; CHECK-LABEL: name: live_low
+    ; CHECK: renamable $r8 = LI_S16 255
+    renamable $r8 = LI_S16 255
+    GOTO_S %bb.1
+  bb.1:
+    liveins: $r0, $r1, $r2, $r3, $r4, $r5, $r6, $r7, $r8
+    ST_W_L $r0, 0, killed renamable $r8
+    ST_W_L $r0, 4, $r1
+    ST_W_L $r0, 8, $r2
+    ST_W_L $r0, 12, $r3
+    ST_W_L $r0, 16, $r4
+    ST_W_L $r0, 20, $r5
+    ST_W_L $r0, 24, $r6
+    ST_W_L $r0, 28, $r7
+    PseudoRET implicit $rets
+...
