@@ -274,14 +274,22 @@ void PI32V2DAGToDAGISel::Select(SDNode *N) {
     return;
   }
   if (auto *LD = dyn_cast<LoadSDNode>(N);
-      LD && LD->getAddressingMode() == ISD::POST_INC) {
+      LD && (LD->getAddressingMode() == ISD::POST_INC ||
+             LD->getAddressingMode() == ISD::PRE_INC)) {
     // value, new base, chain = [b++=n]
     bool S = LD->getExtensionType() == ISD::SEXTLOAD;
+    bool Pre = LD->getAddressingMode() == ISD::PRE_INC;
     unsigned Opc;
     switch (LD->getMemoryVT().getSimpleVT().SimpleTy) {
-    case MVT::i8: Opc = S ? PI32V2::LDBS_POST : PI32V2::LDBU_POST; break;
-    case MVT::i16: Opc = S ? PI32V2::LDHS_POST : PI32V2::LDHU_POST; break;
-    default: Opc = PI32V2::LDW_POST; break;
+    case MVT::i8:
+      Opc = S ? (Pre ? PI32V2::LDBS_PRE : PI32V2::LDBS_POST)
+              : (Pre ? PI32V2::LDBU_PRE : PI32V2::LDBU_POST);
+      break;
+    case MVT::i16:
+      Opc = S ? (Pre ? PI32V2::LDHS_PRE : PI32V2::LDHS_POST)
+              : (Pre ? PI32V2::LDHU_PRE : PI32V2::LDHU_POST);
+      break;
+    default: Opc = Pre ? PI32V2::LDW_PRE : PI32V2::LDW_POST; break;
     }
     SDLoc DL(N);
     SDValue Step = CurDAG->getSignedTargetConstant(
@@ -294,13 +302,15 @@ void PI32V2DAGToDAGISel::Select(SDNode *N) {
     return;
   }
   if (auto *ST = dyn_cast<StoreSDNode>(N);
-      ST && ST->getAddressingMode() == ISD::POST_INC) {
+      ST && (ST->getAddressingMode() == ISD::POST_INC ||
+             ST->getAddressingMode() == ISD::PRE_INC)) {
     // new base, chain = ([b++=n] = v)
+    bool Pre = ST->getAddressingMode() == ISD::PRE_INC;
     unsigned Opc;
     switch (ST->getMemoryVT().getSimpleVT().SimpleTy) {
-    case MVT::i8: Opc = PI32V2::STB_POST; break;
-    case MVT::i16: Opc = PI32V2::STH_POST; break;
-    default: Opc = PI32V2::STW_POST; break;
+    case MVT::i8: Opc = Pre ? PI32V2::STB_PRE : PI32V2::STB_POST; break;
+    case MVT::i16: Opc = Pre ? PI32V2::STH_PRE : PI32V2::STH_POST; break;
+    default: Opc = Pre ? PI32V2::STW_PRE : PI32V2::STW_POST; break;
     }
     SDLoc DL(N);
     SDValue Step = CurDAG->getSignedTargetConstant(

@@ -20,6 +20,7 @@ FunctionPass *createPI32V2ISelDag(PI32V2TargetMachine &TM,
                                   CodeGenOptLevel OptLevel);
 FunctionPass *createPI32V2IfBlocksPass();
 FunctionPass *createPI32V2DecBranchPass();
+FunctionPass *createPI32V2AnchorBasePass();
 FunctionPass *createPI32V2Div64PreparePass();
 FunctionPass *createPI32V2AlignAllocasPass();
 

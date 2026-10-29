@@ -135,6 +135,14 @@ let mayStore = 1, Constraints = "$b = $b_wb" in
 foreach N = ["STW", "STH", "STB"] in
 def N # _POST : PI32V2Pseudo<(outs GPR:$b_wb), (ins GPR:$b, i32imm_op:$n, GPR:$v)>;
 
+// Pre-increment: the base plus the step, then the access ([++b=n]).
+let mayLoad = 1, Constraints = "$b = $b_wb" in
+foreach N = ["LDW", "LDHU", "LDHS", "LDBU", "LDBS"] in
+def N # _PRE : PI32V2Pseudo<(outs GPR:$r, GPR:$b_wb), (ins GPR:$b, i32imm_op:$n)>;
+let mayStore = 1, Constraints = "$b = $b_wb" in
+foreach N = ["STW", "STH", "STB"] in
+def N # _PRE : PI32V2Pseudo<(outs GPR:$b_wb), (ins GPR:$b, i32imm_op:$n, GPR:$v)>;
+
 // select: dst = f; if (a cc b) { dst = t }, the destination being f's
 // register (PI32V2AsmPrinter emits the block). b and t may be constants.
 let Constraints = "$f = $dst" in {
