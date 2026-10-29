@@ -26,6 +26,7 @@
 #include "llvm/CodeGen/MachineInstrBuilder.h"
 #include "llvm/CodeGen/MachineRegisterInfo.h"
 #include "llvm/IR/Function.h"
+#include "llvm/Support/CommandLine.h"
 #include "llvm/Support/ErrorHandling.h"
 
 using namespace llvm;
@@ -108,6 +109,9 @@ PI32V2TargetLowering::PI32V2TargetLowering(const TargetMachine &TM,
   // 64-bit shifts by a register: the pair shifts (lowerShiftParts)
   for (unsigned Op : {ISD::SHL_PARTS, ISD::SRL_PARTS, ISD::SRA_PARTS})
     setOperationAction(Op, MVT::i32, Custom);
+  // (and by a constant: ReplaceNodeResults)
+  for (unsigned Op : {ISD::SHL, ISD::SRL, ISD::SRA})
+    setOperationAction(Op, MVT::i64, Custom);
   setTargetDAGCombine({ISD::BR_CC, ISD::SELECT_CC});
   setOperationAction(ISD::VASTART, MVT::Other, Custom);
   setOperationAction(ISD::RETURNADDR, MVT::i32, Custom);
@@ -393,12 +397,42 @@ SDValue PI32V2TargetLowering::PerformDAGCombine(SDNode *N,
   }
 }
 
+static cl::opt<unsigned> PairShiftMin("pi32v2-pair-shift-min", cl::Hidden,
+                                      cl::init(1));
+static cl::opt<unsigned> PairShiftMaxInsts("pi32v2-pair-shift-max-insts",
+                                           cl::Hidden, cl::init(4000));
+static cl::opt<unsigned> PairShiftMax("pi32v2-pair-shift-max", cl::Hidden,
+                                      cl::init(31));
+
 void PI32V2TargetLowering::ReplaceNodeResults(SDNode *N,
                                               SmallVectorImpl<SDValue> &Results,
                                               SelectionDAG &DAG) const {
   unsigned Opc = N->getOpcode();
   if (Opc == ISD::CopyFromReg) {
     expandCopyFromPair(N, Results, DAG);
+    return;
+  }
+  if ((Opc == ISD::SHL || Opc == ISD::SRL || Opc == ISD::SRA) &&
+      N->getValueType(0) == MVT::i64) {
+    // r1_r0 <<= n (4 bytes) for a constant count the word moves do not do
+    // in two instructions (32 and over)
+    auto *C = dyn_cast<ConstantSDNode>(N->getOperand(1));
+    if (!C || C->getZExtValue() < PairShiftMin || C->getZExtValue() > PairShiftMax)
+      return;
+    // (a huge function has no registers left for pairs: its spills cost more
+    // than the shifts save)
+    if (DAG.getMachineFunction().getFunction().getInstructionCount() >
+        PairShiftMaxInsts)
+      return;
+    SDLoc DL(N);
+    auto [Lo, Hi] = DAG.SplitScalar(N->getOperand(0), DL, MVT::i32, MVT::i32);
+    unsigned PO = Opc == ISD::SHL   ? PI32V2ISD::SHL64
+                  : Opc == ISD::SRL ? PI32V2ISD::SRL64
+                                    : PI32V2ISD::SRA64;
+    SDValue R = DAG.getNode(PO, DL, DAG.getVTList(MVT::i32, MVT::i32), Lo, Hi,
+                            DAG.getConstant(C->getZExtValue(), DL, MVT::i32));
+    Results.push_back(DAG.getNode(ISD::BUILD_PAIR, DL, MVT::i64, R.getValue(0),
+                                  R.getValue(1)));
     return;
   }
   bool Signed = Opc == ISD::SDIV || Opc == ISD::SREM;
@@ -468,10 +502,22 @@ bool PI32V2TargetLowering::getPreIndexedAddressParts(
   return Ptr->getOpcode() == ISD::ADD && indexedParts(N, Ptr.getNode(), Base, Offset);
 }
 
+// CodeGenPrepare asks this one: an address it cannot fold stays a pointer
+// computed once and kept in a register (a struct field 2 KB away, hoisted out
+// of a loop: hundreds of live pointers in a big function). A far offset from
+// a base register is an addi next to the access, so it counts as folded.
 bool PI32V2TargetLowering::isLegalAddressingMode(const DataLayout &DL,
                                                  const AddrMode &AM, Type *Ty,
                                                  unsigned AS,
                                                  Instruction *I) const {
+  if (isExactAddressingMode(DL, AM, Ty))
+    return true;
+  return !AM.BaseGV && AM.Scale == 0 && isInt<17>(AM.BaseOffs);
+}
+
+bool PI32V2TargetLowering::isExactAddressingMode(const DataLayout &DL,
+                                                 const AddrMode &AM,
+                                                 Type *Ty) const {
   if (AM.BaseGV)
     return false; // an address is a li of its own
   uint64_t Size = Ty && Ty->isSized() ? DL.getTypeStoreSize(Ty) : 4;
