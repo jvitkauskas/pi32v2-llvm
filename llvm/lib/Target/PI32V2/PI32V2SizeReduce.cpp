@@ -12,6 +12,7 @@
 #include "PI32V2InstrInfo.h"
 #include "PI32V2Subtarget.h"
 #include "llvm/CodeGen/LiveRegUnits.h"
+#include "llvm/CodeGen/MachineFrameInfo.h"
 #include "llvm/CodeGen/MachineFunctionPass.h"
 #include "llvm/CodeGen/MachineRegisterInfo.h"
 #include "llvm/MC/MCInst.h"
@@ -33,9 +34,12 @@ static cl::opt<bool> EnableGlobalRecolor(
 
 namespace {
 class PI32V2SizeReduce : public MachineFunctionPass {
+  enum Stage { All, Global, Local } RunStage;
 public:
   static char ID;
-  PI32V2SizeReduce() : MachineFunctionPass(ID) {}
+  PI32V2SizeReduce() : MachineFunctionPass(ID), RunStage(All) {}
+  explicit PI32V2SizeReduce(bool LocalOnly)
+      : MachineFunctionPass(ID), RunStage(LocalOnly ? Local : Global) {}
   StringRef getPassName() const override { return "PI32V2 size reduction"; }
   MachineFunctionProperties getRequiredProperties() const override {
     return MachineFunctionProperties().setNoVRegs().setTracksLiveness();
@@ -61,8 +65,8 @@ char PI32V2SizeReduce::ID = 0;
 
 INITIALIZE_PASS(PI32V2SizeReduce, DEBUG_TYPE, "PI32V2 size reduction", false, false)
 
-FunctionPass *llvm::createPI32V2SizeReducePass() {
-  return new PI32V2SizeReduce();
+FunctionPass *llvm::createPI32V2SizeReducePass(bool LocalOnly) {
+  return new PI32V2SizeReduce(LocalOnly);
 }
 
 // Use the emitter's compression rules rather than approximating the immediate
@@ -283,8 +287,16 @@ Register PI32V2SizeReduce::recolor(MachineInstr &Def, Register From,
       continue;
     // Do not open a new callee save for a local encoding saving. The pass runs
     // before prologue/epilogue insertion, so existing saves are still flexible.
-    if (R >= PI32V2::R4 && !MRI.isPhysRegUsed(R))
-      continue;
+    if (R >= PI32V2::R4) {
+      if (RunStage == Local) {
+        if (none_of(MF.getFrameInfo().getCalleeSavedInfo(),
+                    [&](const CalleeSavedInfo &CSI) {
+                      return TRI->regsOverlap(CSI.getReg(), R);
+                    }))
+          continue;
+      } else if (!MRI.isPhysRegUsed(R))
+        continue;
+    }
     bool Legal = true;
     unsigned Size = 0;
     for (auto I = Begin; I != End && Legal; ++I) {
@@ -324,7 +336,13 @@ bool PI32V2SizeReduce::runOnMachineFunction(MachineFunction &MF) {
     return false;
   TII = MF.getSubtarget<PI32V2Subtarget>().getInstrInfo();
   TRI = &TII->getRegisterInfo();
-  bool Changed = EnableGlobalRecolor && recolorCalleeSaved(MF);
+  bool Changed = RunStage != Local && EnableGlobalRecolor &&
+                 recolorCalleeSaved(MF);
+  // Local renaming changes the availability of scratch registers. Run it
+  // after sinking/tail duplication: otherwise a copy previously shared by
+  // two loop paths can be duplicated into both successors by a later pass.
+  if (RunStage == Global)
+    return Changed;
   for (MachineBasicBlock &MBB : MF) {
     LiveRegUnits LiveOut(*TRI);
     LiveOut.addLiveOuts(MBB);

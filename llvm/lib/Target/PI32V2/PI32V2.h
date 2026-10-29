@@ -19,7 +19,7 @@ class PI32V2TargetMachine;
 FunctionPass *createPI32V2ISelDag(PI32V2TargetMachine &TM,
                                   CodeGenOptLevel OptLevel);
 FunctionPass *createPI32V2IfBlocksPass();
-FunctionPass *createPI32V2SizeReducePass();
+FunctionPass *createPI32V2SizeReducePass(bool LocalOnly = false);
 FunctionPass *createPI32V2Div64PreparePass();
 FunctionPass *createPI32V2AlignAllocasPass();
 
