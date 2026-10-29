@@ -121,8 +121,10 @@ public:
 
   // if (...) { } blocks for short conditional code, on the final layout.
   void addPreEmitPass2() override {
-    if (getOptLevel() != CodeGenOptLevel::None)
+    if (getOptLevel() != CodeGenOptLevel::None) {
+      addPass(createPI32V2SizeReducePass(/*LocalOnly=*/true));
       addPass(createPI32V2IfBlocksPass());
+    }
   }
 };
 } // namespace
