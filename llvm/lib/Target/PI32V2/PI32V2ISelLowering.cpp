@@ -475,9 +475,9 @@ bool PI32V2TargetLowering::isLegalAddressingMode(const DataLayout &DL,
   if (AM.BaseGV)
     return false; // an address is a li of its own
   uint64_t Size = Ty && Ty->isSized() ? DL.getTypeStoreSize(Ty) : 4;
-  int64_t Unit = Size >= 4 ? 4 : Size; // (a pair is two words)
-  if (Unit != 1 && Unit != 2 && Unit != 4)
-    return false;
+  // (a pair is two words; an access of 3 bytes, or of none, is split into or
+  // checked as bytes: a plain base register must always be legal)
+  int64_t Unit = Size >= 4 ? 4 : Size == 2 ? 2 : 1;
   unsigned Regs = AM.HasBaseReg;
   if (AM.Scale == 1)
     ++Regs;

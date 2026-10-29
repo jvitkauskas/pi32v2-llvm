@@ -40,3 +40,13 @@ end:
   %r = phi i32 [ 0, %entry ], [ %s1, %loop ]
   ret i32 %r
 }
+
+; A 3-byte access has an addressing mode too (CodeGenPrepare asserts if no mode
+; is legal for its type).
+; CHECK-LABEL: load_i24:
+define i24 @load_i24(ptr %p, i32 %i) {
+  %q = getelementptr i8, ptr %p, i32 %i
+  %r = getelementptr i8, ptr %q, i32 6
+  %v = load i24, ptr %r, align 1
+  ret i24 %v
+}
