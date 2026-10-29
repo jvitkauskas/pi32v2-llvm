@@ -428,6 +428,10 @@ public:
   /// \returns The bonus of inlining the last call to a static function.
   LLVM_ABI int getInliningLastCallToStaticBonus() const;
 
+  /// Whether to retain the last-call-to-static bonus at a cold call site or
+  /// for a cold callee. Other inlining bonuses remain disabled there.
+  LLVM_ABI bool useColdLastCallToStaticBonus(const CallBase &CB) const;
+
   /// \returns A value to be added to the inlining threshold.
   LLVM_ABI unsigned adjustInliningThreshold(const CallBase *CB) const;
 
