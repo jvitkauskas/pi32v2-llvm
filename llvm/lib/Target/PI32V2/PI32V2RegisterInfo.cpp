@@ -330,23 +330,28 @@ bool PI32V2RegisterInfo::eliminateFrameIndex(MachineBasicBlock::iterator II,
   };
 
   // The address of the slot in a register: r = sp + n, or the frame base.
-  auto Address = [&](Register Dst) {
+  auto Address = [&](Register Dst, bool Renamable) {
+    RegState DefFlags = RegState::Define | getRenamableRegState(Renamable);
     if (!FP && Offset >= 0 && Offset <= 4095) {
-      BuildMI(MBB, II, DL, TII.get(PI32V2::ADD_R_SP_I_L), Dst).addImm(Offset);
+      BuildMI(MBB, II, DL, TII.get(PI32V2::ADD_R_SP_I_L))
+          .addReg(Dst, DefFlags).addImm(Offset);
       return;
     }
     // r = r7 + n, or further than r = sp + n reaches: r = sp; then as many
     // r = r + n as the offset needs.
     Register Base = PI32V2::R7;
     if (!FP) {
-      BuildMI(MBB, II, DL, TII.get(PI32V2::MOV_R_SR), Dst).addReg(PI32V2::SP);
+      BuildMI(MBB, II, DL, TII.get(PI32V2::MOV_R_SR))
+          .addReg(Dst, DefFlags).addReg(PI32V2::SP);
       Base = Dst;
     }
     int64_t Left = Offset;
     do {
       int64_t Step = std::clamp<int64_t>(Left, -8192, 8188);
-      BuildMI(MBB, II, DL, TII.get(PI32V2::ADD_S14_RRI), Dst)
-          .addReg(Base, getKillRegState(Base == Dst))
+      BuildMI(MBB, II, DL, TII.get(PI32V2::ADD_S14_RRI))
+          .addReg(Dst, DefFlags)
+          .addReg(Base, getKillRegState(Base == Dst) |
+                            getRenamableRegState(Base == Dst && Renamable))
           .addImm(Step);
       Base = Dst;
       Left -= Step;
@@ -355,7 +360,7 @@ bool PI32V2RegisterInfo::eliminateFrameIndex(MachineBasicBlock::iterator II,
 
   if (Opc == PI32V2::ADDR_FI) {
     Register Dst = MI.getOperand(0).getReg();
-    Address(Dst);
+    Address(Dst, MI.getOperand(0).isRenamable());
     MI.eraseFromParent();
     return true;
   }
@@ -364,6 +369,7 @@ bool PI32V2RegisterInfo::eliminateFrameIndex(MachineBasicBlock::iterator II,
       continue;
     Register Val = MI.getOperand(0).getReg();
     bool Kill = F.Store && MI.getOperand(0).isKill();
+    RegState ValFlags = getRenamableRegState(MI.getOperand(0).isRenamable());
     // With the frame base, [r7+n] itself when n is in reach (9 bits of
     // steps): no register for the address.
     if (FP && Offset % F.Scale == 0 && Offset >= -256 * F.Scale &&
@@ -372,10 +378,11 @@ bool PI32V2RegisterInfo::eliminateFrameIndex(MachineBasicBlock::iterator II,
         BuildMI(MBB, II, DL, TII.get(F.RegOp))
             .addReg(PI32V2::R7)
             .addImm(Offset)
-            .addReg(Val, getKillRegState(Kill))
+            .addReg(Val, getKillRegState(Kill) | ValFlags)
             .setMemRefs(MI.memoperands());
       else
-        BuildMI(MBB, II, DL, TII.get(F.RegOp), Val)
+        BuildMI(MBB, II, DL, TII.get(F.RegOp))
+            .addReg(Val, RegState::Define | ValFlags)
             .addReg(PI32V2::R7)
             .addImm(Offset)
             .setMemRefs(MI.memoperands());
@@ -386,10 +393,11 @@ bool PI32V2RegisterInfo::eliminateFrameIndex(MachineBasicBlock::iterator II,
       if (F.Store)
         BuildMI(MBB, II, DL, TII.get(F.SPOp))
             .addImm(Offset)
-            .addReg(Val, getKillRegState(Kill))
+            .addReg(Val, getKillRegState(Kill) | ValFlags)
             .setMemRefs(MI.memoperands());
       else
-        BuildMI(MBB, II, DL, TII.get(F.SPOp), Val)
+        BuildMI(MBB, II, DL, TII.get(F.SPOp))
+            .addReg(Val, RegState::Define | ValFlags)
             .addImm(Offset)
             .setMemRefs(MI.memoperands());
       MI.eraseFromParent();
@@ -401,16 +409,17 @@ bool PI32V2RegisterInfo::eliminateFrameIndex(MachineBasicBlock::iterator II,
     Register Tmp = F.Store ? RS->scavengeRegisterBackwards(PI32V2::GPRRegClass,
                                                            II, false, 0)
                            : Val;
-    Address(Tmp);
+    Address(Tmp, !F.Store && MI.getOperand(0).isRenamable());
     if (F.Store)
       BuildMI(MBB, II, DL, TII.get(F.RegOp))
           .addReg(Tmp, RegState::Kill)
           .addImm(0)
-          .addReg(Val, getKillRegState(Kill))
+          .addReg(Val, getKillRegState(Kill) | ValFlags)
           .setMemRefs(MI.memoperands());
     else
-      BuildMI(MBB, II, DL, TII.get(F.RegOp), Val)
-          .addReg(Tmp, getKillRegState(Tmp != Val))
+      BuildMI(MBB, II, DL, TII.get(F.RegOp))
+          .addReg(Val, RegState::Define | ValFlags)
+          .addReg(Tmp, getKillRegState(Tmp != Val) | ValFlags)
           .addImm(0)
           .setMemRefs(MI.memoperands());
     MI.eraseFromParent();
