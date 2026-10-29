@@ -49,7 +49,21 @@ public:
   unsigned adjustInliningThreshold(const CallBase *CB) const override {
     const Function *Caller = CB->getCaller();
     bool Size = Caller && Caller->hasOptSize() && !Caller->hasMinSize();
-    return Size ? static_cast<unsigned>(-40) : 0;
+    if (!Size)
+      return 0;
+
+    // Expose small address calculations to the caller's bounds and memory
+    // optimizations. Keep the generic -Os allowance for pure, terminating
+    // local helpers with at most three direct uses (two extra copies), so
+    // that their out-of-line body can disappear. Shared or escaping helpers
+    // keep the stricter size policy, as do inline hints and minsize callers.
+    const Function *Callee = CB->getCalledFunction();
+    bool SmallAddressHelper =
+        Callee && Callee->hasLocalLinkage() && !Callee->hasNUsesOrMore(4) &&
+        !Callee->hasAddressTaken() && Callee->getReturnType()->isPointerTy() &&
+        Callee->doesNotAccessMemory() && Callee->willReturn() &&
+        !Callee->hasFnAttribute(Attribute::InlineHint);
+    return SmallAddressHelper ? 0 : static_cast<unsigned>(-40);
   }
 
   // Keep a source-level inline hint from duplicating large helpers in size
