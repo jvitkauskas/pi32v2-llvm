@@ -135,9 +135,9 @@ define i32 @sel(i32 %a, i32 %b) nounwind {
 
 ; Short conditional code is an if block too (if blocks pass).
 ; CHECK-LABEL: cond:
-; CHECK:      if (r0 != 0) {
-; CHECK-NEXT: goto g
-; CHECK-NEXT: }
+; (a compare with zero of r0..r7 stays a 2-byte branch)
+; CHECK:      if (r0 == 0) goto
+; CHECK:      goto g
 define i32 @cond(i32 %a) nounwind {
   %c = icmp eq i32 %a, 0
   br i1 %c, label %z, label %n

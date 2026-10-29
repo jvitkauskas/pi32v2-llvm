@@ -302,6 +302,8 @@ unsigned PI32V2InstrInfo::getInstSizeInBytes(const MachineInstr &MI) const {
     return isPI32V2LargeProgram() ? 6 : 4; // call.l (call.xl) at most
   case PI32V2::PseudoTAIL:
     return 4; // goto.l at most
+  case PI32V2::PseudoDBNZ:
+    return 4;
   case PI32V2::PseudoCALLR:
   case PI32V2::PseudoRET:
     return 2;
@@ -311,6 +313,9 @@ unsigned PI32V2InstrInfo::getInstSizeInBytes(const MachineInstr &MI) const {
   case PI32V2::LDW_POST: case PI32V2::LDHU_POST: case PI32V2::LDHS_POST:
   case PI32V2::LDBU_POST: case PI32V2::LDBS_POST: case PI32V2::STW_POST:
   case PI32V2::STH_POST: case PI32V2::STB_POST:
+  case PI32V2::LDW_PRE: case PI32V2::LDHU_PRE: case PI32V2::LDHS_PRE:
+  case PI32V2::LDBU_PRE: case PI32V2::LDBS_PRE: case PI32V2::STW_PRE:
+  case PI32V2::STH_PRE: case PI32V2::STB_PRE:
     return 4; // the .pin.l form at most
   case PI32V2::SELECT_AND:
   case PI32V2::SELECT_ANDI:

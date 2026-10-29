@@ -97,6 +97,12 @@ let isBranch = 1, isIndirectBranch = 1, isTerminator = 1, isBarrier = 1,
 def PseudoBRJT : PI32V2Pseudo<(outs GPR:$dead, GPR:$tmp),
                               (ins GPR:$idx, i32imm_op:$jti)>;
 
+// dec-and-branch (PI32V2DecBranch): if (--r != 0) goto, the register in and out.
+def dbnz_target : Operand<OtherVT>;
+let isBranch = 1, isTerminator = 1, hasSideEffects = 0,
+    Constraints = "$dst = $r" in
+def PseudoDBNZ : PI32V2Pseudo<(outs GPR:$dst), (ins GPR:$r, dbnz_target:$n)>;
+
 // return: rts, or the epilogue's {pc, ...} = [sp++].
 let isReturn = 1, isTerminator = 1, isBarrier = 1, Uses = [RETS] in
 def PseudoRET : PI32V2Pseudo<(outs), (ins variable_ops), [(PI32V2ret)]>;
@@ -128,6 +134,14 @@ def N # _POST : PI32V2Pseudo<(outs GPR:$r, GPR:$b_wb), (ins GPR:$b, i32imm_op:$n
 let mayStore = 1, Constraints = "$b = $b_wb" in
 foreach N = ["STW", "STH", "STB"] in
 def N # _POST : PI32V2Pseudo<(outs GPR:$b_wb), (ins GPR:$b, i32imm_op:$n, GPR:$v)>;
+
+// Pre-increment: the base plus the step, then the access ([++b=n]).
+let mayLoad = 1, Constraints = "$b = $b_wb" in
+foreach N = ["LDW", "LDHU", "LDHS", "LDBU", "LDBS"] in
+def N # _PRE : PI32V2Pseudo<(outs GPR:$r, GPR:$b_wb), (ins GPR:$b, i32imm_op:$n)>;
+let mayStore = 1, Constraints = "$b = $b_wb" in
+foreach N = ["STW", "STH", "STB"] in
+def N # _PRE : PI32V2Pseudo<(outs GPR:$b_wb), (ins GPR:$b, i32imm_op:$n, GPR:$v)>;
 
 // select: dst = f; if (a cc b) { dst = t }, the destination being f's
 // register (PI32V2AsmPrinter emits the block). b and t may be constants.
@@ -230,6 +244,18 @@ def : Pat<(or GPR:$a, GPR:$b), (OR_RRR GPR:$a, GPR:$b)>;
 def : Pat<(or GPR:$a, modimm:$n), (OR_MODIMM_RRI GPR:$a, imm:$n)>;
 def : Pat<(xor GPR:$a, GPR:$b), (XOR_RRR GPR:$a, GPR:$b)>;
 def : Pat<(xor GPR:$a, modimm:$n), (XOR_MODIMM_RRI GPR:$a, imm:$n)>;
+// Bit set, clear, toggle and test by a bit number in a register, and bit clear
+// by a mask.
+def : Pat<(or GPR:$a, (shl 1, GPR:$b)), (OR_BIT_RRR GPR:$a, GPR:$b)>;
+def : Pat<(xor GPR:$a, (shl 1, GPR:$b)), (XOR_BIT_RRR GPR:$a, GPR:$b)>;
+def : Pat<(and GPR:$a, (shl 1, GPR:$b)), (AND_BIT_RRR GPR:$a, GPR:$b)>;
+def : Pat<(and GPR:$a, (not (shl 1, GPR:$b))), (AND_INVBIT_RRR GPR:$a, GPR:$b)>;
+def : Pat<(and GPR:$a, (not GPR:$b)), (BIC_RRR GPR:$a, GPR:$b)>;
+// constant - x (and -x): the reverse subtract
+def : Pat<(sub modimm:$n, GPR:$s), (RSUB_MODIMM_RRI imm:$n, GPR:$s)>;
+def : Pat<(subc modimm:$n, GPR:$s), (RSUB_MODIMM_RRI imm:$n, GPR:$s)>;
+// |x| saturates the minimum to the maximum: only for an abs whose minimum is poison
+def : Pat<(abs_min_poison GPR:$a), (ABS_RR GPR:$a)>;
 def : Pat<(shl GPR:$a, GPR:$b), (LSL_RRR GPR:$a, GPR:$b)>;
 def : Pat<(srl GPR:$a, GPR:$b), (LSR_RRR GPR:$a, GPR:$b)>;
 def : Pat<(sra GPR:$a, GPR:$b), (ASR_RRR GPR:$a, GPR:$b)>;
@@ -363,6 +389,10 @@ def simm12rmw : ImmLeaf<i32, [{ return isInt<12>(Imm); }]>;
 def modimm_wide : ImmLeaf<i32, [{
   return PI32V2::modImmRawFor(uint32_t(Imm)).has_value() && !isUInt<8>(Imm);
 }]>;
+// a store whose value has no other use
+def store_once : PatFrag<(ops node:$v, node:$p), (store node:$v, node:$p), [{
+  return cast<StoreSDNode>(N)->getValue().hasOneUse();
+}]>;
 let AddedComplexity = 10 in {
 multiclass RMWReg<SDNode Op, Instruction I> {
   def : Pat<(store (Op (i32 (load (AddrRMW i32:$b, i32:$n))), i32:$s),
@@ -384,6 +414,16 @@ def : Pat<(store (sub (i32 (load (AddrRMW i32:$b, i32:$n))), i32:$s),
 def : Pat<(store (and (i32 (load (AddrRMW i32:$b, i32:$n))), (not i32:$s)),
                  (AddrRMW i32:$b, i32:$n)),
           (RMW_AND_INVR GPR:$b, $n, GPR:$s)>;
+// the bit by number: [r+n] |= 1 << s, ^=, &= ~(1 << s)
+def : Pat<(store (or (i32 (load (AddrRMW i32:$b, i32:$n))), (shl 1, i32:$s)),
+                 (AddrRMW i32:$b, i32:$n)),
+          (RMW_OR_BITR GPR:$b, $n, GPR:$s)>;
+def : Pat<(store (xor (i32 (load (AddrRMW i32:$b, i32:$n))), (shl 1, i32:$s)),
+                 (AddrRMW i32:$b, i32:$n)),
+          (RMW_XOR_BITR GPR:$b, $n, GPR:$s)>;
+def : Pat<(store (and (i32 (load (AddrRMW i32:$b, i32:$n))), (not (shl 1, i32:$s))),
+                 (AddrRMW i32:$b, i32:$n)),
+          (RMW_AND_INVBITR GPR:$b, $n, GPR:$s)>;
 defm : RMWImm<or, modimm, RMW_OR_MODIMM>;
 defm : RMWImm<xor, modimm, RMW_XOR_MODIMM>;
 defm : RMWImm<and, modimm, RMW_AND_MODIMM>;
@@ -392,6 +432,9 @@ defm : RMWImm<add, simm12rmw, RMW_ADD_S12>;
 defm : RMWImm<add, modimm, RMW_ADD_MODIMM>;
 // (a small constant is a 2-byte li, kept in a register for the next store)
 def : Pat<(store (i32 modimm_wide:$m), (AddrRMW i32:$b, i32:$n)),
+          (ST_W_MODIMM GPR:$b, $n, imm:$m)>;
+// (a small constant stored once needs no register for the 2-byte li)
+def : Pat<(store_once (i32 modimm:$m), (AddrRMW i32:$b, i32:$n)),
           (ST_W_MODIMM GPR:$b, $n, imm:$m)>;
 }
 
@@ -501,6 +544,13 @@ def fpimm_s16 : PatLeaf<(fpimm), [{
   return isInt<16>(N->getValueAPF().bitcastToAPInt().getSExtValue());
 }]>;
 def : Pat<(f32 fpimm_s16:$v), (LI_S16 (fpimm_bits $v))>;
+// 1.0f, 0.5f ... are modified immediates: the 4-byte li
+def fpimm_modimm : PatLeaf<(fpimm), [{
+  return PI32V2::modImmRawFor(uint32_t(
+      N->getValueAPF().bitcastToAPInt().getZExtValue())).has_value();
+}]>;
+let AddedComplexity = -1 in
+def : Pat<(f32 fpimm_modimm:$v), (LI_MODIMM (fpimm_bits $v))>;
 def : Pat<(f32 fpimm:$v), (LI_U32 (fpimm_bits $v))>;
 def : Pat<(i32 (bitconvert (f32 GPR:$a))), (COPY_TO_REGCLASS GPR:$a, GPR)>;
 def : Pat<(f32 (bitconvert (i32 GPR:$a))), (COPY_TO_REGCLASS GPR:$a, GPR)>;

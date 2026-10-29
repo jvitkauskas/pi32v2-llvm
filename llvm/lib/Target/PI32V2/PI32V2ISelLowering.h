@@ -35,6 +35,13 @@ public:
   bool getPostIndexedAddressParts(SDNode *N, SDNode *Op, SDValue &Base,
                                   SDValue &Offset, ISD::MemIndexedMode &AM,
                                   SelectionDAG &DAG) const override;
+  // [r+n] (n a multiple of the access size, 9 bits of them), [r+r], and
+  // [r+r<<1] and [r+r<<2] for halfwords and words.
+  bool isLegalAddressingMode(const DataLayout &DL, const AddrMode &AM, Type *Ty,
+                             unsigned AS, Instruction *I = nullptr) const override;
+  bool getPreIndexedAddressParts(SDNode *N, SDValue &Base, SDValue &Offset,
+                                 ISD::MemIndexedMode &AM,
+                                 SelectionDAG &DAG) const override;
   // clz is one instruction, defined for 0 (32): no test around it.
   bool isCheapToSpeculateCtlz(Type *Ty) const override { return true; }
   bool isCheapToSpeculateCttz(Type *Ty) const override { return true; }

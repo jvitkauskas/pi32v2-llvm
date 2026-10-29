@@ -113,10 +113,18 @@ public:
     return false;
   }
 
+  // base register anchors for runs of far accesses (pre-increment).
+  void addPreRegAlloc() override {
+    if (getOptLevel() != CodeGenOptLevel::None)
+      addPass(createPI32V2AnchorBasePass());
+  }
+
   // if (...) { } blocks for short conditional code, on the final layout.
   void addPreEmitPass2() override {
-    if (getOptLevel() != CodeGenOptLevel::None)
+    if (getOptLevel() != CodeGenOptLevel::None) {
+      addPass(createPI32V2DecBranchPass());
       addPass(createPI32V2IfBlocksPass());
+    }
   }
 };
 } // namespace
