@@ -258,12 +258,20 @@ static unsigned postForm(unsigned Opc, unsigned &Skip) {
   case PI32V2::LDHS_POST: return PI32V2::LD_HS_PIN_L;
   case PI32V2::LDBU_POST: return PI32V2::LD_BU_PIN_L;
   case PI32V2::LDBS_POST: return PI32V2::LD_BS_PIN_L;
+  case PI32V2::LDW_PRE: return PI32V2::LD_W_PRE;
+  case PI32V2::LDHU_PRE: return PI32V2::LD_HU_PRE;
+  case PI32V2::LDHS_PRE: return PI32V2::LD_HS_PRE;
+  case PI32V2::LDBU_PRE: return PI32V2::LD_BU_PRE;
+  case PI32V2::LDBS_PRE: return PI32V2::LD_BS_PRE;
   }
   Skip = 0;
   switch (Opc) {
   case PI32V2::STW_POST: return PI32V2::ST_W_PIN_L;
   case PI32V2::STH_POST: return PI32V2::ST_H_PIN_L;
   case PI32V2::STB_POST: return PI32V2::ST_B_PIN_L;
+  case PI32V2::STW_PRE: return PI32V2::ST_W_PRE;
+  case PI32V2::STH_PRE: return PI32V2::ST_H_PRE;
+  case PI32V2::STB_PRE: return PI32V2::ST_B_PRE;
   }
   return 0;
 }
