@@ -287,8 +287,9 @@ def masklen : SDNodeXForm<imm, [{
   return CurDAG->getTargetConstant(llvm::popcount(uint32_t(N->getZExtValue())),
                                    SDLoc(N), MVT::i32);
 }]>;
+// (not 0x7fffffff: x &= ~(1 << 31) is 2 bytes in r0-r7, uextra 4)
 def lowmask_nomod : ImmLeaf<i32, [{
-  return isMask_32(Imm) && Imm != -1 &&
+  return isMask_32(Imm) && Imm != -1 && uint32_t(Imm) != 0x7fffffff &&
          !PI32V2::modImmRawFor(uint32_t(Imm)).has_value();
 }]>;
 // (x >> p) & (2^l - 1), the field inside the word
@@ -389,6 +390,11 @@ def simm12rmw : ImmLeaf<i32, [{ return isInt<12>(Imm); }]>;
 def modimm_wide : ImmLeaf<i32, [{
   return PI32V2::modImmRawFor(uint32_t(Imm)).has_value() && !isUInt<8>(Imm);
 }]>;
+// a store of a value used at most twice (a 4-byte store of a 4-byte li
+// constant: with three or more the register is cheaper: 4 + 2 each)
+def store_few : PatFrag<(ops node:$v, node:$p), (store node:$v, node:$p), [{
+  return cast<StoreSDNode>(N)->getValue()->use_size() <= 2;
+}]>;
 // a store whose value has no other use
 def store_once : PatFrag<(ops node:$v, node:$p), (store node:$v, node:$p), [{
   return cast<StoreSDNode>(N)->getValue().hasOneUse();
@@ -431,7 +437,7 @@ defm : RMWImm<and, nmodimm, RMW_AND_NMODIMM>;
 defm : RMWImm<add, simm12rmw, RMW_ADD_S12>;
 defm : RMWImm<add, modimm, RMW_ADD_MODIMM>;
 // (a small constant is a 2-byte li, kept in a register for the next store)
-def : Pat<(store (i32 modimm_wide:$m), (AddrRMW i32:$b, i32:$n)),
+def : Pat<(store_few (i32 modimm_wide:$m), (AddrRMW i32:$b, i32:$n)),
           (ST_W_MODIMM GPR:$b, $n, imm:$m)>;
 // (a small constant stored once needs no register for the 2-byte li)
 def : Pat<(store_once (i32 modimm:$m), (AddrRMW i32:$b, i32:$n)),

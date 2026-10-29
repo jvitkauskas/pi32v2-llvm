@@ -76,6 +76,30 @@ public:
     return TTI::AMK_PostIndexed;
   }
 
+  // The loop optimizer sees the modes the instructions have; CodeGenPrepare
+  // (through the lowering) also takes a far offset from a base register.
+  bool isLegalAddressingMode(Type *Ty, GlobalValue *BaseGV, int64_t BaseOffset,
+                             bool HasBaseReg, int64_t Scale, unsigned AddrSpace,
+                             Instruction *I = nullptr,
+                             int64_t ScalableOffset = 0) const override {
+    TargetLoweringBase::AddrMode AM;
+    AM.BaseGV = BaseGV;
+    AM.BaseOffs = BaseOffset;
+    AM.HasBaseReg = HasBaseReg;
+    AM.Scale = Scale;
+    return getTLI()->isExactAddressingMode(DL, AM, Ty);
+  }
+
+  InstructionCost getScalingFactorCost(Type *Ty, GlobalValue *BaseGV,
+                                       StackOffset BaseOffset, bool HasBaseReg,
+                                       int64_t Scale,
+                                       unsigned AddrSpace) const override {
+    return isLegalAddressingMode(Ty, BaseGV, BaseOffset.getFixed(), HasBaseReg,
+                                 Scale, AddrSpace)
+               ? 0
+               : InstructionCost::getInvalid();
+  }
+
   InstructionCost getIntImmCost(const APInt &Imm, Type *Ty,
                                 TTI::TargetCostKind CostKind) const override {
     unsigned Bits = Ty->getPrimitiveSizeInBits();
