@@ -1,0 +1,40 @@
+# RUN: llc -mtriple=pi32v2 -run-pass=prolog-epilog -verify-machineinstrs %s -o - | FileCheck %s
+--- |
+  define void @frame_values() { ret void }
+  define void @far_frame() { ret void }
+...
+---
+name: frame_values
+tracksRegLiveness: true
+stack:
+  - { id: 0, size: 4, alignment: 4 }
+body: |
+  bb.0:
+    ; CHECK-LABEL: name: frame_values
+    ; CHECK: renamable $r8 = LD_W_SP_L
+    ; CHECK: ST_W_SP_L {{[0-9]+}}, killed renamable $r8
+    ; CHECK: renamable $r9 = ADD_R_SP_I_L
+    ; CHECK: $r10 = ADD_R_SP_I_L
+    renamable $r8 = LDW_FI %stack.0, 0
+    STW_FI killed renamable $r8, %stack.0, 0
+    renamable $r9 = ADDR_FI %stack.0, 0
+    $r10 = ADDR_FI %stack.0, 0
+    PseudoRET implicit $rets
+...
+---
+name: far_frame
+tracksRegLiveness: true
+fixedStack:
+  - { id: 0, offset: 0, size: 4, alignment: 4, isImmutable: true }
+stack:
+  - { id: 0, size: 8192, alignment: 4 }
+body: |
+  bb.0:
+    ; CHECK-LABEL: name: far_frame
+    ; CHECK: renamable $r8 = MOV_R_SR $sp
+    ; CHECK-NEXT: renamable $r8 = ADD_S14_RRI killed renamable $r8, 8188
+    ; CHECK-NEXT: renamable $r8 = ADD_S14_RRI killed renamable $r8,
+    ; CHECK-NEXT: renamable $r8 = LD_W_L renamable $r8, 0
+    renamable $r8 = LDW_FI %fixed-stack.0, 0
+    PseudoRET implicit $rets
+...
