@@ -39,6 +39,9 @@ public:
   // [r+r<<1] and [r+r<<2] for halfwords and words.
   bool isLegalAddressingMode(const DataLayout &DL, const AddrMode &AM, Type *Ty,
                              unsigned AS, Instruction *I = nullptr) const override;
+  // only the modes the instructions have (the loop optimizer's cost model)
+  bool isExactAddressingMode(const DataLayout &DL, const AddrMode &AM,
+                             Type *Ty) const;
   bool getPreIndexedAddressParts(SDNode *N, SDValue &Base, SDValue &Offset,
                                  ISD::MemIndexedMode &AM,
                                  SelectionDAG &DAG) const override;
