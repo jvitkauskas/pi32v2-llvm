@@ -287,8 +287,9 @@ def masklen : SDNodeXForm<imm, [{
   return CurDAG->getTargetConstant(llvm::popcount(uint32_t(N->getZExtValue())),
                                    SDLoc(N), MVT::i32);
 }]>;
+// (not 0x7fffffff: x &= ~(1 << 31) is 2 bytes in r0-r7, uextra 4)
 def lowmask_nomod : ImmLeaf<i32, [{
-  return isMask_32(Imm) && Imm != -1 &&
+  return isMask_32(Imm) && Imm != -1 && uint32_t(Imm) != 0x7fffffff &&
          !PI32V2::modImmRawFor(uint32_t(Imm)).has_value();
 }]>;
 // (x >> p) & (2^l - 1), the field inside the word
