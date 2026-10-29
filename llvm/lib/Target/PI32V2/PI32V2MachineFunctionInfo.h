@@ -10,6 +10,7 @@
 #define LLVM_LIB_TARGET_PI32V2_PI32V2MACHINEFUNCTIONINFO_H
 
 #include "llvm/CodeGen/MachineFunction.h"
+#include <optional>
 
 namespace llvm {
 
@@ -20,6 +21,9 @@ class PI32V2MachineFunctionInfo : public MachineFunctionInfo {
   int VarArgsFrameIndex = 0;
   unsigned FirstVarArgReg = 4; // r0..r3: the first unused one; 4: none
   int VarArgsSaveIndex = 0;
+  // Allocation hints can change eviction/splitting in unrelated live ranges.
+  // Cache the CFG-wide safety decision for the duration of allocation.
+  mutable std::optional<bool> HasAllocationLoop;
 
 public:
   PI32V2MachineFunctionInfo(const Function &F, const TargetSubtargetInfo *STI) {}
@@ -39,6 +43,7 @@ public:
   unsigned getVarArgsSaveSize() const { return 4 * (4 - FirstVarArgReg); }
   int getVarArgsSaveIndex() const { return VarArgsSaveIndex; }
   void setVarArgsSaveIndex(int FI) { VarArgsSaveIndex = FI; }
+  bool hasAllocationLoop(const MachineFunction &MF) const;
 };
 } // namespace llvm
 

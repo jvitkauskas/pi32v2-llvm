@@ -129,6 +129,7 @@ public:
   void addPreEmitPass2() override {
     if (getOptLevel() != CodeGenOptLevel::None) {
       addPass(createPI32V2DecBranchPass());
+      addPass(createPI32V2SizeReducePass(/*LocalOnly=*/true));
       addPass(createPI32V2IfBlocksPass());
     }
   }

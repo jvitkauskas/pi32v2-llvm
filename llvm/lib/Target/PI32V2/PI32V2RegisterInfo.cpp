@@ -10,10 +10,13 @@
 #include "MCTargetDesc/PI32V2BaseInfo.h"
 #include "MCTargetDesc/PI32V2MCTargetDesc.h"
 #include "PI32V2InstrInfo.h"
+#include "PI32V2MachineFunctionInfo.h"
 #include "PI32V2Subtarget.h"
+#include "llvm/CodeGen/MachineDominators.h"
 #include "llvm/CodeGen/MachineFrameInfo.h"
 #include "llvm/CodeGen/MachineFunction.h"
 #include "llvm/CodeGen/MachineInstrBuilder.h"
+#include "llvm/CodeGen/MachineLoopInfo.h"
 #include "llvm/CodeGen/MachineRegisterInfo.h"
 #include "llvm/CodeGen/RegisterScavenging.h"
 #include "llvm/CodeGen/VirtRegMap.h"
@@ -35,6 +38,15 @@ static cl::opt<bool> EnableTwoAddrHints(
 static cl::opt<bool> EnableLowHints(
     "pi32v2-low-hints", cl::Hidden, cl::init(true),
     cl::desc("Prefer low registers for repeatedly compressible PI32V2 values"));
+
+bool PI32V2MachineFunctionInfo::hasAllocationLoop(const MachineFunction &MF) const {
+  if (!HasAllocationLoop) {
+    MachineDominatorTree MDT(const_cast<MachineFunction &>(MF));
+    MachineLoopInfo MLI(MDT);
+    HasAllocationLoop = !MLI.empty();
+  }
+  return *HasAllocationLoop;
+}
 
 // Test the actual compression rules with distinct representative registers.
 // Unallocated operands are optimistically low, but remain distinct so this
@@ -154,8 +166,15 @@ bool PI32V2RegisterInfo::getRegAllocationHints(
   if (!VRM || (!EnableTwoAddrHints && !UseLowHints))
     return Ret;
 
-  // Keep copy hints first. These are soft preferences: never introduce a copy
-  // or spill merely to obtain a shorter encoding. The MC compressor recognizes
+  // -Os is also used for real-time audio loops. Even a hint on a value used
+  // outside a loop can evict a different value and create copies/spills inside
+  // it. Preserve the allocator's choices throughout functions with loops;
+  // post-RA recoloring can still shorten their encodings without new copies.
+  if (MF.getInfo<PI32V2MachineFunctionInfo>()->hasAllocationLoop(MF))
+    return Ret;
+
+  // Keep copy hints first. These soft preferences can retain copies in
+  // loop-free functions. The MC compressor recognizes
   // either source of the commutative operations, without an explicit commute.
   SmallVector<MCPhysReg, 8> TwoAddrHints;
   const MachineRegisterInfo &MRI = MF.getRegInfo();
