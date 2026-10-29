@@ -199,16 +199,6 @@ void PI32V2AsmPrinter::emitSelect(const MachineInstr *MI) {
       Br = PI32V2::branchWithImm(Br);
     Opener = PI32V2::openerForBranch(Br);
   }
-  MCInst If;
-  If.setOpcode(Opener);
-  If.addOperand(MCOperand::createReg(MI->getOperand(1).getReg()));
-  If.addOperand(ImmB ? MCOperand::createImm(MI->getOperand(2).getImm())
-                     : MCOperand::createReg(MI->getOperand(2).getReg()));
-  If.addOperand(MCOperand::createImm(1));
-  If.addOperand(MCOperand::createImm(0));
-  EmitToStreamer(*OutStreamer, If);
-  IfThen = 1;
-  IfElse = 0;
   MCInst Set;
   if (ImmT) {
     Set.setOpcode(PI32V2::LI_S16);
@@ -222,6 +212,38 @@ void PI32V2AsmPrinter::emitSelect(const MachineInstr *MI) {
   if (!NoCompress)
     PI32V2::compressInst(Set, *MF->getSubtarget().getInstrInfo(),
                          *OutContext.getRegisterInfo());
+  // A register of r0..r7 compared with zero skips the move by a 2-byte
+  // branch (beqz, bnez); an opener takes 4 (as in JieLi's compiler).
+  Register A = MI->getOperand(1).getReg();
+  unsigned CC = And ? 0 : MI->getOperand(5).getImm();
+  if (ImmB && !And && MI->getOperand(2).getImm() == 0 &&
+      (CC == ISD::SETEQ || CC == ISD::SETNE) &&
+      PI32V2::GPRLoRegClass.contains(A)) {
+    MCSymbol *Skip = OutContext.createTempSymbol("sel");
+    MCInst Br;
+    Br.setOpcode(CC == ISD::SETEQ ? PI32V2::BNE_RI : PI32V2::BEQ_RI);
+    Br.addOperand(MCOperand::createReg(A));
+    Br.addOperand(MCOperand::createImm(0));
+    Br.addOperand(
+        MCOperand::createExpr(MCSymbolRefExpr::create(Skip, OutContext)));
+    if (!NoCompress)
+      PI32V2::compressInst(Br, *MF->getSubtarget().getInstrInfo(),
+                           *OutContext.getRegisterInfo());
+    EmitToStreamer(*OutStreamer, Br);
+    EmitToStreamer(*OutStreamer, Set);
+    OutStreamer->emitLabel(Skip);
+    return;
+  }
+  MCInst If;
+  If.setOpcode(Opener);
+  If.addOperand(MCOperand::createReg(A));
+  If.addOperand(ImmB ? MCOperand::createImm(MI->getOperand(2).getImm())
+                     : MCOperand::createReg(MI->getOperand(2).getReg()));
+  If.addOperand(MCOperand::createImm(1));
+  If.addOperand(MCOperand::createImm(0));
+  EmitToStreamer(*OutStreamer, If);
+  IfThen = 1;
+  IfElse = 0;
   EmitToStreamer(*OutStreamer, Set);
   closeIfBlock();
 }
