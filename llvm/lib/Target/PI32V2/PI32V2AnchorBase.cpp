@@ -292,12 +292,16 @@ static bool psrLiveAt(MachineBasicBlock::iterator I, MachineBasicBlock &B) {
 bool PI32V2AnchorBase::shareAcrossBlocks(MachineFunction &MF) {
   struct Unit {
     MachineInstr *Add;
+    // the constant of an add of two registers (an offset past 14 bits), made
+    // for it alone; it goes with the add
+    MachineInstr *Li = nullptr;
     int64_t Imm;
+    int Saved = 4; // the bytes the unit's add costs (with its constant)
     SmallVector<Access, 2> Users; // Off: from the add's base
     bool Taken = false;
     // what the unit's users cost when [t+Rel]: -1 if they cannot reach
     int gain(int64_t Anchor) const {
-      int G = 4;
+      int G = Saved;
       for (const Access &U : Users) {
         int64_t Rel = Imm + U.Off - Anchor;
         if (!fitsPre(Rel, U.Size))
@@ -311,14 +315,34 @@ bool PI32V2AnchorBase::shareAcrossBlocks(MachineFunction &MF) {
   DenseMap<Register, SmallVector<Unit, 16>> ByBase;
   for (MachineBasicBlock &B : MF)
     for (MachineInstr &MI : B) {
-      if (MI.getOpcode() != PI32V2::ADD_S14_RRI || !MI.getOperand(1).isReg() ||
-          !MI.getOperand(1).getReg().isVirtual() || !MI.getOperand(2).isImm())
-        continue;
-      Register T = MI.getOperand(0).getReg();
       Unit U;
       U.Add = &MI;
-      U.Imm = MI.getOperand(2).getImm();
-      bool Ok = !MRI->use_nodbg_empty(T) && T != MI.getOperand(1).getReg();
+      Register Base;
+      if (MI.getOpcode() == PI32V2::ADD_S14_RRI && MI.getOperand(1).isReg() &&
+          MI.getOperand(1).getReg().isVirtual() && MI.getOperand(2).isImm()) {
+        Base = MI.getOperand(1).getReg();
+        U.Imm = MI.getOperand(2).getImm();
+      } else if (MI.getOpcode() == PI32V2::ADD_RRR_L) {
+        // base + a constant of its own: either operand
+        for (unsigned I = 1; I <= 2 && !U.Li; ++I) {
+          Register C = MI.getOperand(I).getReg(), B = MI.getOperand(3 - I).getReg();
+          MachineInstr *Li = C.isVirtual() ? MRI->getUniqueVRegDef(C) : nullptr;
+          if (!Li || !B.isVirtual() || B == C || !MRI->hasOneNonDBGUse(C) ||
+              (Li->getOpcode() != PI32V2::LI_S16 && Li->getOpcode() != PI32V2::LI_U32) ||
+              !Li->getOperand(1).isImm())
+            continue;
+          U.Li = Li;
+          U.Imm = Li->getOperand(1).getImm();
+          U.Saved = (Li->getOpcode() == PI32V2::LI_U32 ? 6 : 4) + 2;
+          Base = B;
+        }
+        if (!U.Li)
+          continue;
+      } else {
+        continue;
+      }
+      Register T = MI.getOperand(0).getReg();
+      bool Ok = !MRI->use_nodbg_empty(T) && T != Base;
       for (MachineOperand &Op : MRI->use_nodbg_operands(T)) {
         Access A;
         MachineInstr &User = *Op.getParent();
@@ -332,7 +356,7 @@ bool PI32V2AnchorBase::shareAcrossBlocks(MachineFunction &MF) {
         U.Users.push_back(A);
       }
       if (Ok)
-        ByBase[MI.getOperand(1).getReg()].push_back(std::move(U));
+        ByBase[Base].push_back(std::move(U));
     }
   bool Changed = false;
   for (auto &[Base, Units] : ByBase) {
@@ -371,8 +395,18 @@ bool PI32V2AnchorBase::shareAcrossBlocks(MachineFunction &MF) {
         for (Access &U : M->Users)
           D = MDT->findNearestCommonDominator(D, U.MI->getParent());
       }
-      if (!D || MBFI->getBlockFreq(D) > Total)
+      // (in a function optimized for size, anywhere no deeper in loops)
+      if (!D)
         continue;
+      if (MF.getFunction().hasOptSize()) {
+        unsigned Depth = ~0u;
+        for (Unit *M : Members)
+          Depth = std::min(Depth, MLI->getLoopDepth(M->Add->getParent()));
+        if (MLI->getLoopDepth(D) > Depth)
+          continue;
+      } else if (MBFI->getBlockFreq(D) > Total) {
+        continue;
+      }
       // out of the loops, where the base allows: the add is made once
       MachineBasicBlock *Def = MRI->getVRegDef(Base)->getParent();
       if (MachineLoop *L = MLI->getLoopFor(D)) {
@@ -406,6 +440,8 @@ bool PI32V2AnchorBase::shareAcrossBlocks(MachineFunction &MF) {
         if (After)
           continue;
       }
+      if (Best->Li)
+        D->splice(At, Best->Li->getParent(), Best->Li);
       D->splice(At, Best->Add->getParent(), Best->Add);
       Register T = Best->Add->getOperand(0).getReg();
       for (Unit *M : Members) {
@@ -417,6 +453,8 @@ bool PI32V2AnchorBase::shareAcrossBlocks(MachineFunction &MF) {
           U.MI->getOperand(BaseIdx + 1).setImm(M->Imm + U.Off - Best->Imm);
         }
         M->Add->eraseFromParent();
+        if (M->Li)
+          M->Li->eraseFromParent();
       }
       Changed = true;
     }
