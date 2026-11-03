@@ -46,6 +46,7 @@ jobs:
             llvm
             clang
             lld
+            libc
             libunwind/include
             third-party
             compiler-rt/lib/builtins
