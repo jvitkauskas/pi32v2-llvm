@@ -90,6 +90,13 @@ def builtins(src, isa, prefix, work):
     print(f"builtins: {len(objs)} objects in {out}")
 
 
+def prune(prefix):
+    """the drivers for other platforms' formats; on Windows also the plain names, each a full copy there"""
+    names = ["clang-cl", "clang-cpp", "lld-link", "ld64.lld", "wasm-ld"] + (["lld"] if WINDOWS else [])
+    for n in names:
+        (prefix / "bin" / f"{n}{EXE}").unlink(missing_ok=True)
+
+
 def aliases(prefix):
     """pi32v2- names (the driver takes the target from the prefix); not on Windows, which has no symlinks."""
     if WINDOWS:
@@ -192,6 +199,7 @@ def main():
     out.mkdir(parents=True, exist_ok=True)
     configure(src, build, prefix, a.tests, a.launcher)
     run("cmake", "--build", build, "--target", "install-distribution-stripped")
+    prune(prefix)
     builtins(src, isa, prefix, build / "pi32v2-runtime")
     aliases(prefix)
     notes(src, isa, prefix, a.name)
