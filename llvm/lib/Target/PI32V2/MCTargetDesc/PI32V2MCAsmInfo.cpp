@@ -27,4 +27,7 @@ PI32V2MCAsmInfo::PI32V2MCAsmInfo(const Triple &TT,
   MinInstAlignment = 2;
   AllowAtInName = true;
   UseAtForSpecifier = true; // lets the lexer keep @ in names (_x@y:)
+  // "x = y" reads as an instruction here: symbols are equated with .set, as
+  // JieLi's compiler prints them (merged globals)
+  UsesSetToEquateSymbol = true;
 }
