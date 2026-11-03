@@ -1,10 +1,10 @@
 # pi32v2-llvm
 
-LLVM 23.1.4 with an experimental target for **pi32v2**, the CPU core of JieLi's AC79 chips (the AC791N in the
+LLVM 23.1.5 with an experimental target for **pi32v2**, the CPU core of JieLi's AC79 chips (the AC791N in the
 M-VAVE FM-1 and SMK-37 Pro): clang, `ld.lld` and the binary tools, able to build that firmware without JieLi's
 closed toolchain. Unofficial; not affiliated with JieLi or M-VAVE.
 
-This branch (`pi32v2`) is the release tag `llvmorg-23.1.4` with the target's commits on top. The target lives in
+This branch (`pi32v2`) is the release tag `llvmorg-23.1.5` with the target's commits on top. The target lives in
 `llvm/lib/Target/PI32V2`, with small hooks elsewhere (the triple, ELF machine 241 and its relocations, clang's
 target and `interrupt` attribute, the `ld.lld` port in `lld/ELF/Arch/PI32V2.cpp`) and tests in
 `llvm/test/CodeGen/PI32V2`, `llvm/test/MC/PI32V2`, `llvm/test/MC/Disassembler/PI32V2` and
@@ -17,6 +17,20 @@ That repository also has the documentation: the backend's status and how it is c
 ([docs/LLVM.md](https://github.com/jvitkauskas/pi32v2-isa/blob/main/docs/LLVM.md)), building and using the
 toolchain ([docs/TOOLCHAIN.md](https://github.com/jvitkauskas/pi32v2-isa/blob/main/docs/TOOLCHAIN.md)), the ISA,
 the ABI and the hardware results.
+
+## Downloads
+
+[Releases](https://github.com/jvitkauskas/pi32v2-llvm/releases) have the toolchain built for Linux (x64, arm64,
+static executables), Windows (x64) and macOS (Apple silicon, Intel), with compiler-rt's builtins, and
+`SHA256SUMS`. A `pi32v2-<LLVM version>-<n>` tag builds and publishes one
+(`.github/workflows/pi32v2-release.yml`, with `.github/pi32v2/package.py`); started by hand, the workflow only
+builds the packages. In GitHub Actions, pi32v2-isa's `setup-pi32v2` action installs a release:
+
+```yaml
+- uses: jvitkauskas/pi32v2-isa/.github/actions/setup-pi32v2@main
+  with:
+    version: pi32v2-23.1.5-1
+```
 
 ## Building
 

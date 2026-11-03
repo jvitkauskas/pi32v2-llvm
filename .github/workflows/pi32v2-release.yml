@@ -1,0 +1,111 @@
+# Builds the pi32v2 toolchain for Linux (x64, arm64), Windows (x64) and macOS (arm64, x64) with
+# .github/pi32v2/package.py. A pi32v2-<LLVM version>-<n> tag publishes the packages as a release with SHA256SUMS;
+# run by hand, it only builds them (as workflow artifacts).
+name: pi32v2 toolchain release
+
+on:
+  push:
+    tags:
+      - 'pi32v2-*'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  # pi32v2-isa's runtime (tools/llvm/runtime), folded into the builtins
+  PI32V2_ISA_REF: e57532149664a53a4184891f0cd5b65bb703cf07
+
+jobs:
+  build:
+    name: ${{ matrix.platform }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 360
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { platform: linux-x64, os: ubuntu-24.04, tests: true }
+          - { platform: linux-arm64, os: ubuntu-24.04-arm }
+          - { platform: windows-x64, os: windows-2025 }
+          - { platform: macos-arm64, os: macos-15 }
+          - { platform: macos-x64, os: macos-15-intel }
+    steps:
+      - name: Name
+        id: name
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/pi32v2-* ]]; then v=${GITHUB_REF_NAME#pi32v2-}; else v=dev-${GITHUB_SHA::9}; fi
+          echo "name=pi32v2-llvm-$v-${{ matrix.platform }}" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v4
+        with:
+          path: llvm-project
+          sparse-checkout: |
+            .github
+            cmake
+            llvm
+            clang
+            lld
+            libunwind/include
+            third-party
+            compiler-rt/lib/builtins
+      - uses: actions/checkout@v4
+        with:
+          repository: jvitkauskas/pi32v2-isa
+          ref: ${{ env.PI32V2_ISA_REF }}
+          path: pi32v2-isa
+      - name: Tools (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y ninja-build lld
+      - name: Tools (macOS)
+        if: runner.os == 'macOS'
+        run: brew install ninja
+      - name: Tools (Windows)
+        if: runner.os == 'Windows'
+        run: python -m pip install ninja
+      - uses: ilammy/msvc-dev-cmd@v1
+        if: runner.os == 'Windows'
+      - uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          key: pi32v2-${{ matrix.platform }}
+          max-size: 2G
+          variant: ${{ runner.os == 'Windows' && 'sccache' || 'ccache' }}
+      - name: Build, test and pack
+        shell: bash
+        run: >
+          python llvm-project/.github/pi32v2/package.py --src llvm-project --isa pi32v2-isa --build build --out out
+          --name ${{ steps.name.outputs.name }}
+          --launcher ${{ runner.os == 'Windows' && 'sccache' || 'ccache' }}
+          ${{ matrix.tests && '--tests' || '' }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.name.outputs.name }}
+          path: |
+            out/*.tar.xz
+            out/*.zip
+          if-no-files-found: error
+          compression-level: 0
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/pi32v2-')
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: .github/pi32v2
+      - uses: actions/download-artifact@v4
+        with:
+          path: assets
+          merge-multiple: true
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          v=${GITHUB_REF_NAME#pi32v2-}
+          cd assets && sha256sum * > SHA256SUMS && cat SHA256SUMS && cd ..
+          sed -e "s/@VERSION@/$v/g" -e "s/@TAG@/$GITHUB_REF_NAME/g" -e "s/@COMMIT@/$GITHUB_SHA/g" \
+            -e "s/@ISA@/$PI32V2_ISA_REF/g" .github/pi32v2/RELEASE.md > notes.md
+          gh release create "$GITHUB_REF_NAME" assets/* --title "pi32v2 LLVM $v" --notes-file notes.md --verify-tag
