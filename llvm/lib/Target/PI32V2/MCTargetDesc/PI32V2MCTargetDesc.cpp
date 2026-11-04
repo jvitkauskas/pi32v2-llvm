@@ -11,6 +11,7 @@
 #include "PI32V2MCAsmInfo.h"
 #include "TargetInfo/PI32V2TargetInfo.h"
 #include "llvm/MC/MCAsmInfo.h"
+#include "llvm/MC/MCInstrAnalysis.h"
 #include "llvm/MC/MCInstrInfo.h"
 #include "llvm/MC/MCObjectFileInfo.h"
 #include "llvm/MC/MCRegisterInfo.h"
@@ -78,6 +79,34 @@ static MCInstPrinter *createPI32V2MCInstPrinter(const Triple &T,
   return new PI32V2InstPrinter(MAI, MII, MRI);
 }
 
+namespace {
+class PI32V2MCInstrAnalysis : public MCInstrAnalysis {
+public:
+  explicit PI32V2MCInstrAnalysis(const MCInstrInfo *Info)
+      : MCInstrAnalysis(Info) {}
+
+  // A branch's offset is in bytes from the end of the instruction (the operands
+  // are scaled when decoded), and is the last operand, after the compared ones.
+  bool evaluateBranch(const MCInst &Inst, uint64_t Addr, uint64_t Size,
+                      uint64_t &Target) const override {
+    const MCInstrDesc &Desc = Info->get(Inst.getOpcode());
+    for (unsigned I = 0, E = std::min<unsigned>(Inst.getNumOperands(),
+                                                Desc.getNumOperands());
+         I != E; ++I)
+      if (Desc.operands()[I].OperandType == MCOI::OPERAND_PCREL &&
+          Inst.getOperand(I).isImm()) {
+        Target = (Addr + Size + Inst.getOperand(I).getImm()) & 0xffffffff;
+        return true;
+      }
+    return false;
+  }
+};
+} // namespace
+
+static MCInstrAnalysis *createPI32V2MCInstrAnalysis(const MCInstrInfo *Info) {
+  return new PI32V2MCInstrAnalysis(Info);
+}
+
 extern "C" LLVM_ABI LLVM_EXTERNAL_VISIBILITY void LLVMInitializePI32V2TargetMC() {
   Target &T = getThePI32V2Target();
   TargetRegistry::RegisterMCAsmInfo(T, createPI32V2MCAsmInfo);
@@ -86,6 +115,7 @@ extern "C" LLVM_ABI LLVM_EXTERNAL_VISIBILITY void LLVMInitializePI32V2TargetMC()
   TargetRegistry::RegisterMCRegInfo(T, createPI32V2MCRegisterInfo);
   TargetRegistry::RegisterMCSubtargetInfo(T, createPI32V2MCSubtargetInfo);
   TargetRegistry::RegisterMCInstPrinter(T, createPI32V2MCInstPrinter);
+  TargetRegistry::RegisterMCInstrAnalysis(T, createPI32V2MCInstrAnalysis);
   TargetRegistry::RegisterMCCodeEmitter(T, createPI32V2MCCodeEmitter);
   TargetRegistry::RegisterMCAsmBackend(T, createPI32V2AsmBackend);
 }
