@@ -91,10 +91,14 @@ public:
     return F && F->hasOptSize() ? 5 : DefaultCallPenalty;
   }
 
-  // Loads and stores with the base stepped after them ([b++=n]).
+  // Loads and stores with the base stepped after them ([b++=n]), for size.
+  // For speed none: a pointer stepped for each access is a register for each
+  // array a loop reads, where one index and the bases do (Ripple's audio
+  // loops spilled them).
   TTI::AddressingModeKind
   getPreferredAddressingMode(const Loop *L, ScalarEvolution *SE) const override {
-    return TTI::AMK_PostIndexed;
+    return L->getHeader()->getParent()->hasOptSize() ? TTI::AMK_PostIndexed
+                                                     : TTI::AMK_None;
   }
 
   // The loop optimizer sees the modes the instructions have; CodeGenPrepare

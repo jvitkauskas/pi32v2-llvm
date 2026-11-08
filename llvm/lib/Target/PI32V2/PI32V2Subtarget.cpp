@@ -9,6 +9,7 @@
 #include "PI32V2Subtarget.h"
 #include "MCTargetDesc/PI32V2MCTargetDesc.h"
 #include "PI32V2SelectionDAGInfo.h"
+#include "llvm/CodeGen/SelectionDAGISel.h"
 
 #define DEBUG_TYPE "pi32v2-subtarget"
 
@@ -34,3 +35,19 @@ PI32V2Subtarget::PI32V2Subtarget(const Triple &TT, StringRef CPU, StringRef FS,
 }
 
 PI32V2Subtarget::~PI32V2Subtarget() = default;
+
+// The DAG in source order for speed: the ILP list scheduler (the default
+// without a scheduling model) starts many values early, which a loop then
+// keeps in registers or on the stack (Ripple's audio loops: 3 % more
+// instructions). For size it measures a little smaller, so it stays there.
+static ScheduleDAGSDNodes *createPI32V2DAGScheduler(SelectionDAGISel *IS,
+                                                    CodeGenOptLevel OL) {
+  if (OL != CodeGenOptLevel::None && IS->MF->getFunction().hasOptSize())
+    return createILPListDAGScheduler(IS, OL);
+  return createSourceListDAGScheduler(IS, OL);
+}
+
+RegisterScheduler::FunctionPassCtor
+PI32V2Subtarget::getDAGScheduler(CodeGenOptLevel) const {
+  return createPI32V2DAGScheduler;
+}

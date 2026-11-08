@@ -13,6 +13,7 @@
 #include "PI32V2ISelLowering.h"
 #include "PI32V2InstrInfo.h"
 #include "PI32V2RegisterInfo.h"
+#include "llvm/CodeGen/SchedulerRegistry.h"
 #include "llvm/CodeGen/SelectionDAGTargetInfo.h"
 #include "llvm/CodeGen/TargetSubtargetInfo.h"
 #include "llvm/IR/DataLayout.h"
@@ -40,6 +41,9 @@ public:
   PI32V2Subtarget(const Triple &TT, StringRef CPU, StringRef FS,
                   const TargetMachine &TM);
   ~PI32V2Subtarget() override;
+
+  RegisterScheduler::FunctionPassCtor
+  getDAGScheduler(CodeGenOptLevel) const override;
 
   const TargetFrameLowering *getFrameLowering() const override {
     return &FrameLowering;

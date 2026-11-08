@@ -53,6 +53,7 @@ public:
   bool
   reverseBranchCondition(SmallVectorImpl<MachineOperand> &Cond) const override;
   unsigned getInstSizeInBytes(const MachineInstr &MI) const override;
+  bool isReMaterializableImpl(const MachineInstr &MI) const override;
 
   /// The conditional branch of the inverse condition, or 0.
   static unsigned inverseBranch(unsigned Opc);

@@ -1022,6 +1022,7 @@ def LI_U32 : PI32V2Inst48<(outs GPR:$r), (ins Opuimm_32_1_0_N_F:$n), "${r} = ${n
   let Inst{0} = n{16};
   let hasSideEffects = 0;
   let isMoveImm = 1;
+  let isReMaterializable = 1;
 }
 def LI_SR_U32 : PI32V2Inst48<(outs SR:$s), (ins Opuimm_32_1_0_N_F:$n), "${s} = ${n}"> {
   bits<4> s;
