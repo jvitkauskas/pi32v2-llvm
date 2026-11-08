@@ -29,7 +29,7 @@ builds the packages. In GitHub Actions, pi32v2-isa's `setup-pi32v2` action insta
 ```yaml
 - uses: jvitkauskas/pi32v2-isa/.github/actions/setup-pi32v2@main
   with:
-    version: pi32v2-23.1.5-2
+    version: pi32v2-23.1.5-3
 ```
 
 ## Building
