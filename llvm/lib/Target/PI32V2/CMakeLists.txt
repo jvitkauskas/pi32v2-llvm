@@ -23,6 +23,7 @@ add_llvm_target(PI32V2CodeGen
   PI32V2FreezeReturns.cpp
   PI32V2FrameLowering.cpp
   PI32V2IfBlocks.cpp
+  PI32V2Packetize.cpp
   PI32V2InstrInfo.cpp
   PI32V2ISelDAGToDAG.cpp
   PI32V2ISelLowering.cpp

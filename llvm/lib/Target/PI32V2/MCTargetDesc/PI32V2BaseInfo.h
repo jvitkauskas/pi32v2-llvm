@@ -50,6 +50,13 @@ namespace PI32V2 {
 /// false if it keeps its form.
 bool compressInst(MCInst &Inst, const MCInstrInfo &MII,
                   const MCRegisterInfo &MRI);
+/// The # twin of Opc, issued in parallel with the next instruction, or 0.
+unsigned parallelTwin(unsigned Opc, const MCInstrInfo &MII);
+/// Whether B (in its final form) can be the second of a packet.
+bool isParallelB(const MCInst &B, const MCRegisterInfo &MRI);
+/// Whether A and B after it (both in their final forms) can be one packet.
+bool canIssueParallel(const MCInst &A, const MCInst &B, const MCInstrInfo &MII,
+                      const MCRegisterInfo &MRI);
 
 } // namespace PI32V2
 } // namespace llvm

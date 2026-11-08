@@ -38,6 +38,7 @@ extern "C" LLVM_ABI LLVM_EXTERNAL_VISIBILITY void LLVMInitializePI32V2Target() {
   PassRegistry &PR = *PassRegistry::getPassRegistry();
   initializePI32V2AsmPrinterPass(PR);
   initializePI32V2SizeReducePass(PR);
+  initializePI32V2PacketizePass(PR);
   initializePI32V2DAGToDAGISelLegacyPass(PR);
   // Loop rotation with header duplication also at minsize (-Oz): it saves
   // bytes here (m-bootloader 1.2: 72 on the SMK-37, 52 on the FM-1), in clang
@@ -144,12 +145,14 @@ public:
       addPass(createPI32V2SizeReducePass());
   }
 
-  // if (...) { } blocks for short conditional code, on the final layout.
+  // if (...) { } blocks for short conditional code, on the final layout;
+  // then instructions next to the loads and stores they go in parallel with.
   void addPreEmitPass2() override {
     if (getOptLevel() != CodeGenOptLevel::None) {
       addPass(createPI32V2DecBranchPass());
       addPass(createPI32V2SizeReducePass(/*LocalOnly=*/true));
       addPass(createPI32V2IfBlocksPass());
+      addPass(createPI32V2PacketizePass());
     }
   }
 };

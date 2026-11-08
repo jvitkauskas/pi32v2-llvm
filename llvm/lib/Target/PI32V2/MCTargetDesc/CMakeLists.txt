@@ -8,6 +8,7 @@ add_llvm_component_library(LLVMPI32V2Desc
   PI32V2MCAsmInfo.cpp
   PI32V2MCCodeEmitter.cpp
   PI32V2MCTargetDesc.cpp
+  PI32V2Parallel.cpp
 
   LINK_COMPONENTS
   MC

@@ -58,6 +58,9 @@ public:
   /// The conditional branch of the inverse condition, or 0.
   static unsigned inverseBranch(unsigned Opc);
   static bool isCondBranch(unsigned Opc) { return inverseBranch(Opc) != 0; }
+  /// A memory access pseudo's form with its base written back ([b++=n],
+  /// [++b=n]), or 0; Skip is the pseudo's operand the form does not have.
+  static unsigned postIncForm(unsigned Opc, unsigned &Skip);
 };
 } // namespace llvm
 

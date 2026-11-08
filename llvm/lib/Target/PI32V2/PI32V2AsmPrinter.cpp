@@ -69,8 +69,6 @@ private:
   void emitOne(const MachineInstr *MI);
   bool lowerPlain(const MachineInstr *MI, MCInst &Inst);
   unsigned parallelTwin(const MCInst &A, const MachineInstr *MI);
-  // the # twin of each form that has one
-  DenseMap<unsigned, unsigned> Twins;
   void emitBRJT(const MachineInstr *MI);
   void emitJumpTableInfo() override {} // the tables are inline (emitBRJT)
   void emitSelect(const MachineInstr *MI);
@@ -258,34 +256,6 @@ void PI32V2AsmPrinter::emitSelect(const MachineInstr *MI) {
   closeIfBlock();
 }
 
-// A post-increment pseudo's form; its written-back base operand is not one of
-// the form's (the form says [b++=n]).
-static unsigned postForm(unsigned Opc, unsigned &Skip) {
-  Skip = 1;
-  switch (Opc) {
-  case PI32V2::LDW_POST: return PI32V2::LD_W_PIN_L;
-  case PI32V2::LDHU_POST: return PI32V2::LD_HU_PIN_L;
-  case PI32V2::LDHS_POST: return PI32V2::LD_HS_PIN_L;
-  case PI32V2::LDBU_POST: return PI32V2::LD_BU_PIN_L;
-  case PI32V2::LDBS_POST: return PI32V2::LD_BS_PIN_L;
-  case PI32V2::LDW_PRE: return PI32V2::LD_W_PRE;
-  case PI32V2::LDHU_PRE: return PI32V2::LD_HU_PRE;
-  case PI32V2::LDHS_PRE: return PI32V2::LD_HS_PRE;
-  case PI32V2::LDBU_PRE: return PI32V2::LD_BU_PRE;
-  case PI32V2::LDBS_PRE: return PI32V2::LD_BS_PRE;
-  }
-  Skip = 0;
-  switch (Opc) {
-  case PI32V2::STW_POST: return PI32V2::ST_W_PIN_L;
-  case PI32V2::STH_POST: return PI32V2::ST_H_PIN_L;
-  case PI32V2::STB_POST: return PI32V2::ST_B_PIN_L;
-  case PI32V2::STW_PRE: return PI32V2::ST_W_PRE;
-  case PI32V2::STH_PRE: return PI32V2::ST_H_PRE;
-  case PI32V2::STB_PRE: return PI32V2::ST_B_PRE;
-  }
-  return 0;
-}
-
 // A switch. The table follows the instruction, so the entries are the forward
 // distances of the cases: tbb (bytes) or tbh (halfwords, the index doubled),
 // target = the table's start + 2 * entry, as JieLi's compiler makes them. A
@@ -375,7 +345,7 @@ void PI32V2AsmPrinter::emitBRJT(const MachineInstr *MI) {
 bool PI32V2AsmPrinter::lowerPlain(const MachineInstr *MI, MCInst &Inst) {
   unsigned Opc = MI->getOpcode();
   unsigned Skip;
-  if (unsigned Form = postForm(Opc, Skip)) {
+  if (unsigned Form = PI32V2InstrInfo::postIncForm(Opc, Skip)) {
     Inst.setOpcode(Form);
     for (unsigned K = 0; K < MI->getNumOperands(); ++K) {
       MCOperand Op;
@@ -398,107 +368,24 @@ bool PI32V2AsmPrinter::lowerPlain(const MachineInstr *MI, MCInst &Inst) {
   return true;
 }
 
-// Parallel issue: `A #` and a 16-bit load or store B after it go as one packet
-// (docs/COMPILER.md in pi32v2-isa, tried on the FM-1). B reads the registers as
-// they were before A, and A's result stays where B loads the same register, so
-// A must write none of B's registers; A may read one B writes (as in JieLi's
-// `r1 += r4 #` / `r4 = [r0+56]`). B is one of the short forms on r0..r7 (an
-// added register r8..r15); A an ALU, move, multiply, float or bit-field form
-// with a # twin, outside an if block (which has no # forms). The twin is the
-// same size: a layout already made stays as it is. A's # twin or 0.
+// Parallel issue (MCTargetDesc/PI32V2Parallel.cpp): A's # twin when the next
+// instruction of the block that takes bytes makes a packet with it, else 0.
+// Never in an if block (which has no # forms).
 unsigned PI32V2AsmPrinter::parallelTwin(const MCInst &A,
                                         const MachineInstr *MI) {
   if (!EnableParallel || IfThen || IfElse)
     return 0;
   const MCInstrInfo &MII = *MF->getSubtarget().getInstrInfo();
-  if (Twins.empty()) {
-    StringMap<unsigned> ByName;
-    for (unsigned Opc = 0, E = MII.getNumOpcodes(); Opc != E; ++Opc)
-      ByName[MII.getName(Opc)] = Opc;
-    for (unsigned Opc = 0, E = MII.getNumOpcodes(); Opc != E; ++Opc) {
-      StringRef N = MII.getName(Opc);
-      if (!N.consume_back("_P"))
-        continue;
-      auto It = ByName.find(N);
-      if (It == ByName.end())
-        continue;
-      const MCInstrDesc &B = MII.get(It->second), &P = MII.get(Opc);
-      if (B.getSize() == P.getSize() && B.getNumOperands() == P.getNumOperands())
-        Twins[It->second] = Opc;
-    }
-  }
-  auto Twin = Twins.find(A.getOpcode());
-  if (Twin == Twins.end())
+  if (!PI32V2::parallelTwin(A.getOpcode(), MII))
     return 0;
-  const MCInstrDesc &AD = MII.get(A.getOpcode());
-  // (only these forms have twins; the generated short forms carry no
-  // side-effect flags, so those are not asked)
-  if (AD.mayLoad() || AD.mayStore() || AD.isBranch() || AD.isCall() ||
-      AD.isReturn() || AD.isTerminator())
-    return 0;
-  for (MCPhysReg R : AD.implicit_uses())
-    if (R != PI32V2::PSR)
-      return 0;
-  for (MCPhysReg R : AD.implicit_defs())
-    if (R != PI32V2::PSR)
-      return 0;
-  for (const MCOperand &O : A)
-    if (O.isReg() && !PI32V2::GPRRegClass.contains(O.getReg()) &&
-        !PI32V2::GPRPairRegClass.contains(O.getReg()))
-      return 0;
-
-  // B: the next instruction of the block that takes bytes
   const MachineInstr *Next = MI->getNextNode();
   while (Next && (Next->isDebugInstr() || Next->isKill() || Next->isImplicitDef()))
     Next = Next->getNextNode();
   MCInst B;
-  if (!Next || Next->isBundled() || !lowerPlain(Next, B))
+  if (!Next || Next->isBundled() || !lowerPlain(Next, B) ||
+      !PI32V2::canIssueParallel(A, B, MII, *OutContext.getRegisterInfo()))
     return 0;
-  bool Sp = false, Pi = false;
-  switch (B.getOpcode()) {
-  case PI32V2::LD_W_SP:
-  case PI32V2::ST_W_SP:
-    Sp = true;
-    break;
-  case PI32V2::LD_BU_PI:
-  case PI32V2::LD_HU_PI:
-  case PI32V2::LD_W_PI:
-  case PI32V2::ST_B_PI:
-  case PI32V2::ST_H_PI:
-  case PI32V2::ST_W_PI:
-    Pi = true;
-    break;
-  case PI32V2::LD_BU:
-  case PI32V2::LD_BU_PIN:
-  case PI32V2::LD_HU:
-  case PI32V2::LD_HU_PIN:
-  case PI32V2::LD_W:
-  case PI32V2::LD_W_PIN:
-  case PI32V2::ST_B:
-  case PI32V2::ST_B_PIN:
-  case PI32V2::ST_H:
-  case PI32V2::ST_H_PIN:
-  case PI32V2::ST_W:
-  case PI32V2::ST_W_PIN:
-    break;
-  default:
-    return 0;
-  }
-  (void)Sp;
-  const MCRegisterInfo &TRI = *OutContext.getRegisterInfo();
-  unsigned NDefs = AD.getNumDefs();
-  for (const MCOperand &O : B) {
-    if (!O.isReg())
-      continue;
-    MCRegister R = O.getReg();
-    if (!PI32V2::GPRLoRegClass.contains(R) &&
-        !(Pi && PI32V2::GPRHiRegClass.contains(R)))
-      return 0;
-    for (unsigned K = 0; K != NDefs; ++K)
-      if (A.getOperand(K).isReg() && TRI.regsOverlap(A.getOperand(K).getReg(), R))
-        return 0;
-  }
-  return Twin->second;
+  return PI32V2::parallelTwin(A.getOpcode(), MII);
 }
 
 void PI32V2AsmPrinter::emitOne(const MachineInstr *MI) {

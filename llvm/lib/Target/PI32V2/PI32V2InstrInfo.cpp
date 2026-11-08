@@ -7,6 +7,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "PI32V2InstrInfo.h"
+#include "PI32V2.h"
 #include "MCTargetDesc/PI32V2MCTargetDesc.h"
 #include "PI32V2Subtarget.h"
 #include "llvm/CodeGen/MachineFrameInfo.h"
@@ -191,6 +192,20 @@ bool PI32V2InstrInfo::analyzeBranch(MachineBasicBlock &MBB,
   MachineBasicBlock::iterator I = MBB.getLastNonDebugInstr();
   if (I == MBB.end() || !isUnpredicatedTerminator(*I))
     return false;
+  // A terminator in an if block's part (PI32V2IfBlocks, at the end) runs only
+  // in its part: the block falls through otherwise. Not analyzable. (The parts
+  // are 7 instructions at most.)
+  unsigned Back = 0;
+  for (MachineBasicBlock::iterator J = I;; --J) {
+    if (!J->isDebugInstr()) {
+      if (PI32V2::isIfOpener(J->getOpcode()))
+        return true;
+      if (++Back > 8)
+        break;
+    }
+    if (J == MBB.begin())
+      break;
+  }
   MachineInstr *Last = &*I;
   MachineInstr *Prev = nullptr;
   if (I != MBB.begin()) {
@@ -339,4 +354,32 @@ unsigned PI32V2InstrInfo::getInstSizeInBytes(const MachineInstr &MI) const {
   default:
     return MI.getDesc().getSize();
   }
+}
+
+// A post-increment pseudo's form; its written-back base operand is not one of
+// the form's (the form says [b++=n]).
+unsigned PI32V2InstrInfo::postIncForm(unsigned Opc, unsigned &Skip) {
+  Skip = 1;
+  switch (Opc) {
+  case PI32V2::LDW_POST: return PI32V2::LD_W_PIN_L;
+  case PI32V2::LDHU_POST: return PI32V2::LD_HU_PIN_L;
+  case PI32V2::LDHS_POST: return PI32V2::LD_HS_PIN_L;
+  case PI32V2::LDBU_POST: return PI32V2::LD_BU_PIN_L;
+  case PI32V2::LDBS_POST: return PI32V2::LD_BS_PIN_L;
+  case PI32V2::LDW_PRE: return PI32V2::LD_W_PRE;
+  case PI32V2::LDHU_PRE: return PI32V2::LD_HU_PRE;
+  case PI32V2::LDHS_PRE: return PI32V2::LD_HS_PRE;
+  case PI32V2::LDBU_PRE: return PI32V2::LD_BU_PRE;
+  case PI32V2::LDBS_PRE: return PI32V2::LD_BS_PRE;
+  }
+  Skip = 0;
+  switch (Opc) {
+  case PI32V2::STW_POST: return PI32V2::ST_W_PIN_L;
+  case PI32V2::STH_POST: return PI32V2::ST_H_PIN_L;
+  case PI32V2::STB_POST: return PI32V2::ST_B_PIN_L;
+  case PI32V2::STW_PRE: return PI32V2::ST_W_PRE;
+  case PI32V2::STH_PRE: return PI32V2::ST_H_PRE;
+  case PI32V2::STB_PRE: return PI32V2::ST_B_PRE;
+  }
+  return 0;
 }

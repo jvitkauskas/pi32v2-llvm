@@ -19,6 +19,7 @@ class PI32V2TargetMachine;
 FunctionPass *createPI32V2ISelDag(PI32V2TargetMachine &TM,
                                   CodeGenOptLevel OptLevel);
 FunctionPass *createPI32V2IfBlocksPass();
+FunctionPass *createPI32V2PacketizePass();
 FunctionPass *createPI32V2DecBranchPass();
 FunctionPass *createPI32V2AnchorBasePass();
 FunctionPass *createPI32V2SizeReducePass(bool LocalOnly = false);
@@ -39,6 +40,7 @@ unsigned branchWithImm(unsigned Br);
 } // namespace PI32V2
 void initializePI32V2AsmPrinterPass(PassRegistry &);
 void initializePI32V2SizeReducePass(PassRegistry &);
+void initializePI32V2PacketizePass(PassRegistry &);
 void initializePI32V2DAGToDAGISelLegacyPass(PassRegistry &);
 } // namespace llvm
 

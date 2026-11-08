@@ -1,0 +1,90 @@
+# PI32V2Packetize: an instruction with a # twin moves next to a short load or
+# store it can go in parallel with, when only registers order it (the
+# emitter then makes the pair: parallel-issue.mir).
+# RUN: llc -mtriple=pi32v2 -mcpu=r3 -run-pass=pi32v2-packetize -verify-machineinstrs %s -o - \
+# RUN:   | FileCheck %s
+---
+name: down
+tracksRegLiveness: true
+body: |
+  bb.0:
+    liveins: $r0, $r2, $r3, $r8
+
+    ; CHECK-LABEL: name: down
+    ; CHECK:      $r6 = LD_W_L $r8, 0
+    ; CHECK-NEXT: $r4 = ADD_RRR_L $r2, $r3
+    ; CHECK-NEXT: $r1 = LD_W_L $r0, 0
+    $r4 = ADD_RRR_L $r2, $r3, implicit-def dead $psr
+    $r6 = LD_W_L $r8, 0 :: (load (s32))
+    $r1 = LD_W_L $r0, 0 :: (load (s32))
+    PseudoRET implicit $r1, implicit $r4, implicit $r6
+...
+---
+name: up
+tracksRegLiveness: true
+body: |
+  bb.0:
+    liveins: $r0, $r1, $r5, $r6
+
+    ; CHECK-LABEL: name: up
+    ; CHECK:      $r3 = LI_U32 305419896
+    ; CHECK-NEXT: $r5 = ADD_RRR_L $r5, $r6
+    ; CHECK-NEXT: ST_W_L $r0, 4, $r1
+    $r3 = LI_U32 305419896
+    ST_W_L $r0, 4, $r1 :: (store (s32))
+    $r5 = ADD_RRR_L $r5, $r6, implicit-def dead $psr
+    PseudoRET implicit $r3, implicit $r5
+...
+---
+name: blocked
+tracksRegLiveness: true
+body: |
+  bb.0:
+    liveins: $r0, $r2, $r3
+
+    ; what A writes is read on the way: it stays
+    ; CHECK-LABEL: name: blocked
+    ; CHECK:      $r4 = ADD_RRR_L $r2, $r3
+    ; CHECK-NEXT: $r6 = LD_W_L $r4, 0
+    ; CHECK-NEXT: $r1 = LD_W_L $r0, 0
+    $r4 = ADD_RRR_L $r2, $r3, implicit-def dead $psr
+    $r6 = LD_W_L $r4, 0 :: (load (s32))
+    $r1 = LD_W_L $r0, 0 :: (load (s32))
+    PseudoRET implicit $r1, implicit $r6
+...
+---
+name: upread
+tracksRegLiveness: true
+body: |
+  bb.0:
+    liveins: $r0, $r5
+
+    ; A after B reads what B loads: it cannot go before B
+    ; CHECK-LABEL: name: upread
+    ; CHECK:      $r3 = LI_U32 305419896
+    ; CHECK-NEXT: $r1 = LD_W_L $r0, 4
+    ; CHECK-NEXT: $r5 = ADD_RRR_L $r5, $r1
+    $r3 = LI_U32 305419896
+    $r1 = LD_W_L $r0, 4 :: (load (s32))
+    $r5 = ADD_RRR_L $r5, $r1, implicit-def dead $psr
+    PseudoRET implicit $r3, implicit $r5
+...
+---
+name: flags
+tracksRegLiveness: true
+body: |
+  bb.0:
+    liveins: $r0, $r2, $r3, $r5, $r6, $r8
+
+    ; the flags A sets would be read after B: A stays
+    ; CHECK-LABEL: name: flags
+    ; CHECK:      $r4 = ADD_RRR_L $r2, $r3
+    ; CHECK-NEXT: $r6 = LD_W_L $r8, 0
+    ; CHECK-NEXT: $r1 = LD_W_L $r0, 0
+    ; CHECK-NEXT: $r5 = ADDC_RRR
+    $r4 = ADD_RRR_L $r2, $r3, implicit-def dead $psr
+    $r6 = LD_W_L $r8, 0 :: (load (s32))
+    $r1 = LD_W_L $r0, 0 :: (load (s32))
+    $r5 = ADDC_RRR $r5, $r6, implicit-def dead $psr, implicit $psr
+    PseudoRET implicit $r1, implicit $r4, implicit $r5
+...
