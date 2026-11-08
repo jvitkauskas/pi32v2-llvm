@@ -18,6 +18,7 @@
 #include "PI32V2.h"
 #include "PI32V2TargetMachine.h"
 #include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/StringMap.h"
 #include "PI32V2Subtarget.h"
 #include "PI32V2InstrInfo.h"
 #include "TargetInfo/PI32V2TargetInfo.h"
@@ -45,6 +46,11 @@ static cl::opt<bool> NoCompress(
     "pi32v2-no-compress", cl::Hidden,
     cl::desc("PI32V2: keep the general forms instead of the shorter ones"));
 
+static cl::opt<bool> EnableParallel(
+    "pi32v2-parallel", cl::Hidden, cl::init(true),
+    cl::desc("PI32V2: issue an instruction in parallel with the 16-bit load "
+             "or store after it (the # forms)"));
+
 namespace {
 class PI32V2AsmPrinter : public AsmPrinter {
 public:
@@ -61,6 +67,10 @@ private:
   // The instructions still to come in the open if block's parts.
   unsigned IfThen = 0, IfElse = 0;
   void emitOne(const MachineInstr *MI);
+  bool lowerPlain(const MachineInstr *MI, MCInst &Inst);
+  unsigned parallelTwin(const MCInst &A, const MachineInstr *MI);
+  // the # twin of each form that has one
+  DenseMap<unsigned, unsigned> Twins;
   void emitBRJT(const MachineInstr *MI);
   void emitJumpTableInfo() override {} // the tables are inline (emitBRJT)
   void emitSelect(const MachineInstr *MI);
@@ -359,8 +369,10 @@ void PI32V2AsmPrinter::emitBRJT(const MachineInstr *MI) {
     OutStreamer->emitValue(MCSymbolRefExpr::create(C->getSymbol(), OutContext), 4);
 }
 
-void PI32V2AsmPrinter::emitOne(const MachineInstr *MI) {
-  MCInst Inst;
+// An instruction that becomes one MC instruction of its own: a memory access
+// with a written-back base (its form), or any instruction without a lowering of
+// its own here (false for those).
+bool PI32V2AsmPrinter::lowerPlain(const MachineInstr *MI, MCInst &Inst) {
   unsigned Opc = MI->getOpcode();
   unsigned Skip;
   if (unsigned Form = postForm(Opc, Skip)) {
@@ -370,13 +382,128 @@ void PI32V2AsmPrinter::emitOne(const MachineInstr *MI) {
       if (K != Skip && lowerOperand(MI->getOperand(K), Op))
         Inst.addOperand(Op);
     }
-    if (!NoCompress)
-      PI32V2::compressInst(Inst, *MF->getSubtarget().getInstrInfo(),
-                           *OutContext.getRegisterInfo());
-    EmitToStreamer(*OutStreamer, Inst);
-    return;
+  } else {
+    if (MI->isPseudo() || MI->isCall() || MI->isReturn() || MI->isInlineAsm())
+      return false;
+    Inst.setOpcode(Opc);
+    for (const MachineOperand &MO : MI->operands()) {
+      MCOperand Op;
+      if (lowerOperand(MO, Op))
+        Inst.addOperand(Op);
+    }
   }
-  switch (Opc) {
+  if (!NoCompress)
+    PI32V2::compressInst(Inst, *MF->getSubtarget().getInstrInfo(),
+                         *OutContext.getRegisterInfo());
+  return true;
+}
+
+// Parallel issue: `A #` and a 16-bit load or store B after it go as one packet
+// (docs/COMPILER.md in pi32v2-isa, tried on the FM-1). B reads the registers as
+// they were before A, and A's result stays where B loads the same register, so
+// A must write none of B's registers; A may read one B writes (as in JieLi's
+// `r1 += r4 #` / `r4 = [r0+56]`). B is one of the short forms on r0..r7 (an
+// added register r8..r15); A an ALU, move, multiply, float or bit-field form
+// with a # twin, outside an if block (which has no # forms). The twin is the
+// same size: a layout already made stays as it is. A's # twin or 0.
+unsigned PI32V2AsmPrinter::parallelTwin(const MCInst &A,
+                                        const MachineInstr *MI) {
+  if (!EnableParallel || IfThen || IfElse)
+    return 0;
+  const MCInstrInfo &MII = *MF->getSubtarget().getInstrInfo();
+  if (Twins.empty()) {
+    StringMap<unsigned> ByName;
+    for (unsigned Opc = 0, E = MII.getNumOpcodes(); Opc != E; ++Opc)
+      ByName[MII.getName(Opc)] = Opc;
+    for (unsigned Opc = 0, E = MII.getNumOpcodes(); Opc != E; ++Opc) {
+      StringRef N = MII.getName(Opc);
+      if (!N.consume_back("_P"))
+        continue;
+      auto It = ByName.find(N);
+      if (It == ByName.end())
+        continue;
+      const MCInstrDesc &B = MII.get(It->second), &P = MII.get(Opc);
+      if (B.getSize() == P.getSize() && B.getNumOperands() == P.getNumOperands())
+        Twins[It->second] = Opc;
+    }
+  }
+  auto Twin = Twins.find(A.getOpcode());
+  if (Twin == Twins.end())
+    return 0;
+  const MCInstrDesc &AD = MII.get(A.getOpcode());
+  // (only these forms have twins; the generated short forms carry no
+  // side-effect flags, so those are not asked)
+  if (AD.mayLoad() || AD.mayStore() || AD.isBranch() || AD.isCall() ||
+      AD.isReturn() || AD.isTerminator())
+    return 0;
+  for (MCPhysReg R : AD.implicit_uses())
+    if (R != PI32V2::PSR)
+      return 0;
+  for (MCPhysReg R : AD.implicit_defs())
+    if (R != PI32V2::PSR)
+      return 0;
+  for (const MCOperand &O : A)
+    if (O.isReg() && !PI32V2::GPRRegClass.contains(O.getReg()) &&
+        !PI32V2::GPRPairRegClass.contains(O.getReg()))
+      return 0;
+
+  // B: the next instruction of the block that takes bytes
+  const MachineInstr *Next = MI->getNextNode();
+  while (Next && (Next->isDebugInstr() || Next->isKill() || Next->isImplicitDef()))
+    Next = Next->getNextNode();
+  MCInst B;
+  if (!Next || Next->isBundled() || !lowerPlain(Next, B))
+    return 0;
+  bool Sp = false, Pi = false;
+  switch (B.getOpcode()) {
+  case PI32V2::LD_W_SP:
+  case PI32V2::ST_W_SP:
+    Sp = true;
+    break;
+  case PI32V2::LD_BU_PI:
+  case PI32V2::LD_HU_PI:
+  case PI32V2::LD_W_PI:
+  case PI32V2::ST_B_PI:
+  case PI32V2::ST_H_PI:
+  case PI32V2::ST_W_PI:
+    Pi = true;
+    break;
+  case PI32V2::LD_BU:
+  case PI32V2::LD_BU_PIN:
+  case PI32V2::LD_HU:
+  case PI32V2::LD_HU_PIN:
+  case PI32V2::LD_W:
+  case PI32V2::LD_W_PIN:
+  case PI32V2::ST_B:
+  case PI32V2::ST_B_PIN:
+  case PI32V2::ST_H:
+  case PI32V2::ST_H_PIN:
+  case PI32V2::ST_W:
+  case PI32V2::ST_W_PIN:
+    break;
+  default:
+    return 0;
+  }
+  (void)Sp;
+  const MCRegisterInfo &TRI = *OutContext.getRegisterInfo();
+  unsigned NDefs = AD.getNumDefs();
+  for (const MCOperand &O : B) {
+    if (!O.isReg())
+      continue;
+    MCRegister R = O.getReg();
+    if (!PI32V2::GPRLoRegClass.contains(R) &&
+        !(Pi && PI32V2::GPRHiRegClass.contains(R)))
+      return 0;
+    for (unsigned K = 0; K != NDefs; ++K)
+      if (A.getOperand(K).isReg() && TRI.regsOverlap(A.getOperand(K).getReg(), R))
+        return 0;
+  }
+  return Twin->second;
+}
+
+void PI32V2AsmPrinter::emitOne(const MachineInstr *MI) {
+  MCInst Inst;
+  switch (MI->getOpcode()) {
   case PI32V2::PseudoBRJT:
     emitBRJT(MI);
     return;
@@ -397,43 +524,56 @@ void PI32V2AsmPrinter::emitOne(const MachineInstr *MI) {
   case PI32V2::SELECT_CC_RII:
     emitSelect(MI);
     return;
-  case PI32V2::PseudoCALL:
-    Opc = PI32V2::CALL_S;
-    break;
-  case PI32V2::PseudoCALLR:
-    Opc = PI32V2::CALL_R;
-    break;
-  case PI32V2::PseudoTAIL:
-    Opc = PI32V2::GOTO_S;
-    break;
   case PI32V2::PseudoRET:
     // an interrupt handler returns to reti
     Inst.setOpcode(MF->getFunction().hasFnAttribute("interrupt") ? PI32V2::RTI
                                                                   : PI32V2::RTS);
     EmitToStreamer(*OutStreamer, Inst);
     return;
+  case PI32V2::PseudoCALL:
+  case PI32V2::PseudoCALLR:
+  case PI32V2::PseudoTAIL: {
+    unsigned Opc = MI->getOpcode() == PI32V2::PseudoCALL    ? PI32V2::CALL_S
+                   : MI->getOpcode() == PI32V2::PseudoCALLR ? PI32V2::CALL_R
+                                                            : PI32V2::GOTO_S;
+    Inst.setOpcode(Opc);
+    for (const MachineOperand &MO : MI->operands()) {
+      MCOperand Op;
+      if (lowerOperand(MO, Op)) {
+        Inst.addOperand(Op); // the target only; the rest are the argument registers
+        break;
+      }
+    }
+    if (!NoCompress)
+      PI32V2::compressInst(Inst, *MF->getSubtarget().getInstrInfo(),
+                           *OutContext.getRegisterInfo());
+    if ((IfThen || IfElse) && Inst.getOpcode() == PI32V2::GOTO_S)
+      Inst.setOpcode(PI32V2::GOTO_L);
+    EmitToStreamer(*OutStreamer, Inst);
+    return;
+  }
   default:
     break;
   }
-  Inst.setOpcode(Opc);
-  bool Call = MI->getOpcode() == PI32V2::PseudoCALL ||
-              MI->getOpcode() == PI32V2::PseudoCALLR ||
-              MI->getOpcode() == PI32V2::PseudoTAIL;
-  for (const MachineOperand &MO : MI->operands()) {
-    MCOperand Op;
-    if (!lowerOperand(MO, Op))
-      continue;
-    Inst.addOperand(Op);
-    if (Call) // the target only; the rest are the argument registers
-      break;
+  if (!lowerPlain(MI, Inst)) {
+    // a pseudo without a form of its own
+    Inst = MCInst();
+    Inst.setOpcode(MI->getOpcode());
+    for (const MachineOperand &MO : MI->operands()) {
+      MCOperand Op;
+      if (lowerOperand(MO, Op))
+        Inst.addOperand(Op);
+    }
+    if (!NoCompress)
+      PI32V2::compressInst(Inst, *MF->getSubtarget().getInstrInfo(),
+                           *OutContext.getRegisterInfo());
   }
-  if (!NoCompress)
-    PI32V2::compressInst(Inst, *MF->getSubtarget().getInstrInfo(),
-                         *OutContext.getRegisterInfo());
   // In an if block a goto is the 32-bit form, as JieLi's compiler emits it
   // (it never puts the 16-bit one there, even for a near target).
   if ((IfThen || IfElse) && Inst.getOpcode() == PI32V2::GOTO_S)
     Inst.setOpcode(PI32V2::GOTO_L);
+  if (unsigned Twin = parallelTwin(Inst, MI))
+    Inst.setOpcode(Twin);
   EmitToStreamer(*OutStreamer, Inst);
 }
 
