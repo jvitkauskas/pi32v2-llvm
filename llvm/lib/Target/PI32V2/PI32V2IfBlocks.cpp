@@ -275,6 +275,14 @@ bool PI32V2IfBlocks::convert(MachineBasicBlock &B) {
   Br.eraseFromParent();
   if (ElsePart)
     FLast->eraseFromParent(); // the goto over the else part
+  // (a register the then part kills that the else part reads: the parts run
+  // one or the other, the instructions in a row say otherwise)
+  if (ElsePart)
+    for (MachineInstr &E : *ElsePart)
+      for (const MachineOperand &MO : E.operands())
+        if (MO.isReg() && MO.getReg() && MO.readsReg())
+          for (MachineInstr &Th : F)
+            Th.clearRegisterKills(MO.getReg(), &TII->getRegisterInfo());
   B.splice(B.end(), &F, F.begin(), F.end());
   if (ElsePart)
     B.splice(B.end(), ElsePart, ElsePart->begin(), ElsePart->end());

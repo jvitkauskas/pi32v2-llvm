@@ -222,6 +222,8 @@ bool PI32V2AnchorBase::convert(MachineBasicBlock &B) {
         Acc[J].Via->eraseFromParent();
       Done.insert(&M);
     }
+    // (the members' kills of the base were the base's)
+    MRI->clearKillFlags(Wb);
     Changed = true;
   }
 
@@ -260,6 +262,7 @@ bool PI32V2AnchorBase::convert(MachineBasicBlock &B) {
       A.MI->getOperand(BaseIdx + 1).setImm(A.Off - Best->Imm);
       A.Via->eraseFromParent();
       A.Via = nullptr;
+      MRI->clearKillFlags(Best->T); // (its first access killed it)
       Best->Last = P;
       Changed = true;
       continue;
@@ -456,6 +459,10 @@ bool PI32V2AnchorBase::shareAcrossBlocks(MachineFunction &MF) {
         if (M->Li)
           M->Li->eraseFromParent();
       }
+      // T has the members' users now (whose kills were of their own adds), and
+      // the add may have moved past a kill of the base
+      MRI->clearKillFlags(T);
+      MRI->clearKillFlags(Base);
       Changed = true;
     }
   }
