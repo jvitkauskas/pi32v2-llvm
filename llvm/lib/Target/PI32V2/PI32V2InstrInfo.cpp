@@ -8,6 +8,7 @@
 
 #include "PI32V2InstrInfo.h"
 #include "PI32V2.h"
+#include "llvm/CodeGen/ISDOpcodes.h"
 #include "MCTargetDesc/PI32V2MCTargetDesc.h"
 #include "PI32V2Subtarget.h"
 #include "llvm/CodeGen/MachineFrameInfo.h"
@@ -321,6 +322,40 @@ bool PI32V2InstrInfo::isReMaterializableImpl(const MachineInstr &MI) const {
       MI.getMF()->getFunction().hasOptSize())
     return false;
   return TargetInstrInfo::isReMaterializableImpl(MI);
+}
+
+static bool isCommutableSelect(unsigned Opc) {
+  return Opc == PI32V2::SELECT_CC || Opc == PI32V2::SELECT_CC_RI ||
+         Opc == PI32V2::SELECT_AND;
+}
+
+// A select's two values (operands 3 and 4, t and f).
+bool PI32V2InstrInfo::findCommutedOpIndices(const MachineInstr &MI,
+                                            unsigned &SrcOpIdx1,
+                                            unsigned &SrcOpIdx2) const {
+  if (!isCommutableSelect(MI.getOpcode()))
+    return TargetInstrInfo::findCommutedOpIndices(MI, SrcOpIdx1, SrcOpIdx2);
+  return fixCommutedOpIndices(SrcOpIdx1, SrcOpIdx2, 3, 4);
+}
+
+// dst = f; if (a cc b) { dst = t } is dst = t; if (a !cc b) { dst = f }: the
+// inverse condition holds exactly when the condition does not, NaN included
+// (an ordered float comparison becomes an unordered one).
+MachineInstr *PI32V2InstrInfo::commuteInstructionImpl(MachineInstr &MI,
+                                                      bool NewMI,
+                                                      unsigned OpIdx1,
+                                                      unsigned OpIdx2) const {
+  if (!isCommutableSelect(MI.getOpcode()))
+    return TargetInstrInfo::commuteInstructionImpl(MI, NewMI, OpIdx1, OpIdx2);
+  unsigned Cond = MI.getOperand(5).getImm();
+  bool Float = Cond & PI32V2::SelectFloat;
+  ISD::CondCode Inv = ISD::getSetCCInverse(ISD::CondCode(Cond & ~PI32V2::SelectFloat),
+                                           Float ? MVT::f32 : MVT::i32);
+  MachineInstr *R =
+      TargetInstrInfo::commuteInstructionImpl(MI, NewMI, OpIdx1, OpIdx2);
+  if (R)
+    R->getOperand(5).setImm(unsigned(Inv) | (Float ? PI32V2::SelectFloat : 0));
+  return R;
 }
 
 unsigned PI32V2InstrInfo::getInstSizeInBytes(const MachineInstr &MI) const {

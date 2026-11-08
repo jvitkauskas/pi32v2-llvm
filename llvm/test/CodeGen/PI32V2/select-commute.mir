@@ -1,0 +1,40 @@
+# A select's two values commute (the condition inverted, NaN included): the
+# two-address pass ties the one that dies there instead of copying the other.
+# RUN: llc -mtriple=pi32v2 -mcpu=r3 -run-pass=livevars,twoaddressinstruction %s -o - | FileCheck %s
+---
+name: fmax
+tracksRegLiveness: true
+body: |
+  bb.0:
+    liveins: $r0, $r1
+
+    ; f (%1) is used after, t (%0) dies: t and f swap, ordered > (258)
+    ; becomes unordered <= (269), and %0's register is the result's
+    ; CHECK-LABEL: name: fmax
+    ; CHECK:      %2:gpr = COPY killed %0
+    ; CHECK-NEXT: %2:gpr = SELECT_CC %2, %1, %1, %2, 269
+    %0:gpr = COPY $r0
+    %1:gpr = COPY $r1
+    %2:gpr = SELECT_CC %0, %1, %0, %1, 258
+    $r0 = COPY %2
+    $r1 = COPY %1
+    PseudoRET implicit $r0, implicit $r1
+...
+---
+name: imax
+tracksRegLiveness: true
+body: |
+  bb.0:
+    liveins: $r0, $r1
+
+    ; signed > (SETGT, 18) becomes <= (SETLE, 21)
+    ; CHECK-LABEL: name: imax
+    ; CHECK:      %2:gpr = COPY killed %0
+    ; CHECK-NEXT: %2:gpr = SELECT_CC_RI %2, 7, %1, %2, 21
+    %0:gpr = COPY $r0
+    %1:gpr = COPY $r1
+    %2:gpr = SELECT_CC_RI %0, 7, %0, %1, 18
+    $r0 = COPY %2
+    $r1 = COPY %1
+    PseudoRET implicit $r0, implicit $r1
+...

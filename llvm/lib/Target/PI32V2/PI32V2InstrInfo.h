@@ -54,6 +54,11 @@ public:
   reverseBranchCondition(SmallVectorImpl<MachineOperand> &Cond) const override;
   unsigned getInstSizeInBytes(const MachineInstr &MI) const override;
   bool isReMaterializableImpl(const MachineInstr &MI) const override;
+  bool findCommutedOpIndices(const MachineInstr &MI, unsigned &SrcOpIdx1,
+                             unsigned &SrcOpIdx2) const override;
+  MachineInstr *commuteInstructionImpl(MachineInstr &MI, bool NewMI,
+                                       unsigned OpIdx1,
+                                       unsigned OpIdx2) const override;
 
   /// The conditional branch of the inverse condition, or 0.
   static unsigned inverseBranch(unsigned Opc);

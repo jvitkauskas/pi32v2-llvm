@@ -145,11 +145,17 @@ def N # _PRE : PI32V2Pseudo<(outs GPR:$b_wb), (ins GPR:$b, i32imm_op:$n, GPR:$v)
 
 // select: dst = f; if (a cc b) { dst = t }, the destination being f's
 // register (PI32V2AsmPrinter emits the block). b and t may be constants.
+// The forms with both values in registers commute: t and f swap and the
+// condition becomes its inverse (PI32V2InstrInfo::commuteInstructionImpl), so
+// the two-address pass can tie the value that dies there (a loop's running
+// maximum keeps its register).
 let Constraints = "$f = $dst" in {
+let isCommutable = 1 in {
 def SELECT_CC : PI32V2Pseudo<(outs GPR:$dst),
                              (ins GPR:$a, GPR:$b, GPR:$t, GPR:$f, i32imm_op:$cc)>;
 def SELECT_CC_RI : PI32V2Pseudo<(outs GPR:$dst),
                                 (ins GPR:$a, i32imm_op:$b, GPR:$t, GPR:$f, i32imm_op:$cc)>;
+}
 def SELECT_CC_RRI : PI32V2Pseudo<(outs GPR:$dst),
                                  (ins GPR:$a, GPR:$b, i32imm_op:$t, GPR:$f, i32imm_op:$cc)>;
 def SELECT_CC_RII : PI32V2Pseudo<(outs GPR:$dst),
@@ -158,6 +164,7 @@ def SELECT_CC_RII : PI32V2Pseudo<(outs GPR:$dst),
 // dst = f; if ((a & m) cc 0) { dst = t }: a bit test (cc eq or ne), the mask a
 // modified immediate; t a register or a constant.
 let Constraints = "$f = $dst" in {
+let isCommutable = 1 in
 def SELECT_AND : PI32V2Pseudo<(outs GPR:$dst),
                               (ins GPR:$a, i32imm_op:$m, GPR:$t, GPR:$f, i32imm_op:$cc)>;
 def SELECT_ANDI : PI32V2Pseudo<(outs GPR:$dst),
