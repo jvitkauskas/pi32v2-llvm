@@ -44,6 +44,10 @@ public:
 
   RegisterScheduler::FunctionPassCtor
   getDAGScheduler(CodeGenOptLevel) const override;
+  // (PI32V2TargetMachine::createMachineScheduler: for speed only)
+  bool enableMachineScheduler() const override { return true; }
+  void overrideSchedPolicy(MachineSchedPolicy &Policy,
+                           const SchedRegion &Region) const override;
 
   const TargetFrameLowering *getFrameLowering() const override {
     return &FrameLowering;

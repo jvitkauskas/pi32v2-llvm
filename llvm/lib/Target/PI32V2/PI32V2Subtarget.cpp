@@ -9,6 +9,7 @@
 #include "PI32V2Subtarget.h"
 #include "MCTargetDesc/PI32V2MCTargetDesc.h"
 #include "PI32V2SelectionDAGInfo.h"
+#include "llvm/CodeGen/MachineScheduler.h"
 #include "llvm/CodeGen/SelectionDAGISel.h"
 
 #define DEBUG_TYPE "pi32v2-subtarget"
@@ -50,4 +51,16 @@ static ScheduleDAGSDNodes *createPI32V2DAGScheduler(SelectionDAGISel *IS,
 RegisterScheduler::FunctionPassCtor
 PI32V2Subtarget::getDAGScheduler(CodeGenOptLevel) const {
   return createPI32V2DAGScheduler;
+}
+
+// A region that ends at a call (the call, which moves sp, bounds it) sets up the
+// arguments: scheduled top-down, a value stored to the stack is stored before
+// r0..r3 are loaded; bottom-up kept it live across them, in a register that
+// then had to be saved (a push and a pop in the function). Elsewhere both
+// directions, which measured faster.
+void PI32V2Subtarget::overrideSchedPolicy(MachineSchedPolicy &Policy,
+                                          const SchedRegion &Region) const {
+  MachineBasicBlock::iterator End = Region.RegionEnd;
+  if (End != Region.RegionBegin->getParent()->end() && End->isCall())
+    Policy.OnlyTopDown = true;
 }

@@ -13,6 +13,7 @@
 #include "PI32V2MachineFunctionInfo.h"
 #include "PI32V2TargetObjectFile.h"
 #include "TargetInfo/PI32V2TargetInfo.h"
+#include "llvm/CodeGen/MachineScheduler.h"
 #include "llvm/CodeGen/Passes.h"
 #include "llvm/CodeGen/TargetLoweringObjectFileImpl.h"
 #include "llvm/CodeGen/TargetPassConfig.h"
@@ -90,6 +91,29 @@ MachineFunctionInfo *PI32V2TargetMachine::createMachineFunctionInfo(
     const TargetSubtargetInfo *STI) const {
   return PI32V2MachineFunctionInfo::create<PI32V2MachineFunctionInfo>(Allocator,
                                                                       F, STI);
+}
+
+namespace {
+// The machine scheduler for speed only: measured on an SMK-37 running Ripple's
+// audio code from RAM, 0.5 % to 7 % faster (macro-string 12.5 % -> 7.6 % behind
+// JieLi's compiler); a function optimized for size keeps the order the DAG
+// gave it (the reordering made the size benchmark 0.15 % larger).
+class PI32V2SchedLive : public ScheduleDAGMILive {
+public:
+  using ScheduleDAGMILive::ScheduleDAGMILive;
+  void schedule() override {
+    if (!MF.getFunction().hasOptSize())
+      ScheduleDAGMILive::schedule();
+  }
+};
+} // namespace
+
+ScheduleDAGInstrs *
+PI32V2TargetMachine::createMachineScheduler(MachineSchedContext *C) const {
+  ScheduleDAGMILive *DAG =
+      new PI32V2SchedLive(C, std::make_unique<GenericScheduler>(C));
+  DAG->addMutation(createCopyConstrainDAGMutation(DAG->TII, DAG->TRI));
+  return DAG;
 }
 
 namespace {
