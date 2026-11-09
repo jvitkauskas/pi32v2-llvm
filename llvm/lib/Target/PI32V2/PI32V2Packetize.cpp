@@ -275,7 +275,9 @@ bool PI32V2Packetize::runOnBlock(MachineBasicBlock &MBB) {
 }
 
 bool PI32V2Packetize::runOnMachineFunction(MachineFunction &MF) {
-  if (!EnablePacketize || skipFunction(MF.getFunction()))
+  // (minsize: no pairs, see PI32V2AsmPrinter::parallelTwin)
+  if (!EnablePacketize || skipFunction(MF.getFunction()) ||
+      MF.getFunction().hasMinSize())
     return false;
   TII = MF.getSubtarget<PI32V2Subtarget>().getInstrInfo();
   TRI = MF.getSubtarget().getRegisterInfo();

@@ -370,10 +370,12 @@ bool PI32V2AsmPrinter::lowerPlain(const MachineInstr *MI, MCInst &Inst) {
 
 // Parallel issue (MCTargetDesc/PI32V2Parallel.cpp): A's # twin when the next
 // instruction of the block that takes bytes makes a packet with it, else 0.
-// Never in an if block (which has no # forms).
+// Never in an if block (which has no # forms), and not when minimizing size:
+// the twins are the same size, but their other bit compresses worse (m-bootloader's
+// packed stage 1: about 80 bytes more).
 unsigned PI32V2AsmPrinter::parallelTwin(const MCInst &A,
                                         const MachineInstr *MI) {
-  if (!EnableParallel || IfThen || IfElse)
+  if (!EnableParallel || IfThen || IfElse || MF->getFunction().hasMinSize())
     return 0;
   const MCInstrInfo &MII = *MF->getSubtarget().getInstrInfo();
   if (!PI32V2::parallelTwin(A.getOpcode(), MII))
