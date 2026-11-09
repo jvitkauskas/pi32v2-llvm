@@ -315,10 +315,11 @@ bool PI32V2InstrInfo::reverseBranchCondition(
   return false;
 }
 
-// A 32-bit constant made again where it is used, not kept in a register (and
-// spilled in a loop), but only for speed: each copy is 6 bytes, a reload 2.
+// A 32-bit constant (li.u32, li.modimm) made again where it is used, not kept
+// in a register (and spilled in a loop), but only for speed: each copy is 6 or
+// 4 bytes, a reload 2.
 bool PI32V2InstrInfo::isReMaterializableImpl(const MachineInstr &MI) const {
-  if (MI.getOpcode() == PI32V2::LI_U32 &&
+  if ((MI.getOpcode() == PI32V2::LI_U32 || MI.getOpcode() == PI32V2::LI_MODIMM) &&
       MI.getMF()->getFunction().hasOptSize())
     return false;
   return TargetInstrInfo::isReMaterializableImpl(MI);

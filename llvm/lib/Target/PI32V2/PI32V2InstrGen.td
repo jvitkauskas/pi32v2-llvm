@@ -928,6 +928,7 @@ def LI_MODIMM : PI32V2Inst32<(outs GPR:$r), (ins Opmodimm_F_F_F:$n), "${r} = ${n
   let Inst{0} = n{0};
   let hasSideEffects = 0;
   let isMoveImm = 1;
+  let isReMaterializable = 1;
 }
 def LI_S16 : PI32V2Inst32<(outs GPR:$r), (ins Opsimm_16_1_0_N_F:$n), "${r} = ${n}"> {
   bits<4> r;
