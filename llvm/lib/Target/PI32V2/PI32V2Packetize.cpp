@@ -33,7 +33,7 @@ using namespace llvm;
 #define DEBUG_TYPE "pi32v2-packetize"
 
 static cl::opt<bool> EnablePacketize(
-    "pi32v2-packetize", cl::Hidden, cl::init(true),
+    "pi32v2-enable-packetize", cl::Hidden, cl::init(true),
     cl::desc("PI32V2: move instructions next to the short loads and stores "
              "they can be issued in parallel with"));
 
