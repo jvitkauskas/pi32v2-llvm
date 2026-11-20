@@ -2,12 +2,14 @@
 ; exception, EMU_MSG 2), then a goto to itself; no call to abort().
 ; RUN: llc -verify-machineinstrs -mtriple=pi32v2 -mcpu=r3 < %s | FileCheck %s
 ; RUN: llc -verify-machineinstrs -mtriple=pi32v2 -mcpu=r3 -filetype=obj < %s | llvm-objdump -d - | FileCheck %s --check-prefix=OBJ
+; With every branch relaxed, a trap is still the four bytes getInstSizeInBytes says (its goto has an immediate
+; offset, no fixup), which jump tables and branch ranges are sized by.
+; RUN: llc -verify-machineinstrs -mtriple=pi32v2 -mcpu=r3 -filetype=obj -mc-relax-all < %s | llvm-objdump -d - | FileCheck %s --check-prefix=OBJ
 
 ; CHECK-LABEL: trap:
 ; CHECK-NOT:   abort
 ; CHECK:       btbclr
-; CHECK-NEXT:  [[L:\.Ltmp[0-9]+]]:
-; CHECK-NEXT:  goto [[L]]
+; CHECK-NEXT:  goto -2
 define void @trap() {
   call void @llvm.trap()
   unreachable
@@ -15,8 +17,7 @@ define void @trap() {
 
 ; CHECK-LABEL: debugtrap:
 ; CHECK:       btbclr
-; CHECK-NEXT:  [[L:\.Ltmp[0-9]+]]:
-; CHECK-NEXT:  goto [[L]]
+; CHECK-NEXT:  goto -2
 define void @debugtrap() {
   call void @llvm.debugtrap()
   ret void
@@ -24,8 +25,7 @@ define void @debugtrap() {
 
 ; CHECK-LABEL: ubsantrap:
 ; CHECK:       btbclr
-; CHECK-NEXT:  [[L:\.Ltmp[0-9]+]]:
-; CHECK-NEXT:  goto [[L]]
+; CHECK-NEXT:  goto -2
 define void @ubsantrap() {
   call void @llvm.ubsantrap(i8 12)
   unreachable
@@ -54,8 +54,7 @@ out:
 ; CHECK:       if (r0 != 17) goto [[DONE:\.LBB[0-9_]+]]
 ; CHECK-NOT:   {
 ; CHECK:       btbclr
-; CHECK-NEXT:  [[L:\.Ltmp[0-9]+]]:
-; CHECK-NEXT:  goto [[L]]
+; CHECK-NEXT:  goto -2
 ; CHECK-NEXT:  [[DONE]]:
 define i32 @cond_trap(i32 %a, ptr %p) {
   %c = icmp eq i32 %a, 17
@@ -72,8 +71,7 @@ done:
 ; CHECK:       if (r0 != 17) goto [[DONE:\.LBB[0-9_]+]]
 ; CHECK-NOT:   {
 ; CHECK:       btbclr
-; CHECK-NEXT:  [[L:\.Ltmp[0-9]+]]:
-; CHECK-NEXT:  goto [[L]]
+; CHECK-NEXT:  goto -2
 ; CHECK-NEXT:  [[DONE]]:
 define i32 @cond_debugtrap(i32 %a, ptr %p) {
   %c = icmp eq i32 %a, 17
@@ -95,7 +93,7 @@ define void @after_trap(ptr %p) {
   ret void
 }
 
-; The goto is the 16-bit form, to the address it's at: 0x8000 + (-1 & 0x7ff) style, an offset of -2 bytes.
+; The goto is the 16-bit form, to its own address: f7 9f, an offset of -2 bytes.
 ; OBJ-LABEL: <trap>:
 ; OBJ:       btbclr
 ; OBJ-NEXT:  goto -2

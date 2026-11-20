@@ -417,13 +417,13 @@ void PI32V2AsmPrinter::emitOne(const MachineInstr *MI) {
     // btbclr traps as an illegal instruction; the goto to itself is for a core where it doesn't.
     Inst.setOpcode(PI32V2::BTBCLR);
     EmitToStreamer(*OutStreamer, Inst);
-    MCSymbol *Here = OutContext.createTempSymbol();
-    OutStreamer->emitLabel(Here);
     MCInst Loop;
     // PI32V2IfBlocks never puts a trap in an if block, where a goto takes its 32-bit form.
     assert(!IfThen && !IfElse && "a trap in an if block");
+    // The offset as an immediate (-2: to itself), not a label: no fixup, so the assembler never relaxes it
+    // to the 32-bit form (as -mc-relax-all would), and the trap stays the four bytes getInstSizeInBytes says.
     Loop.setOpcode(PI32V2::GOTO_S);
-    Loop.addOperand(MCOperand::createExpr(MCSymbolRefExpr::create(Here, OutContext)));
+    Loop.addOperand(MCOperand::createImm(-2));
     EmitToStreamer(*OutStreamer, Loop);
     return;
   }
