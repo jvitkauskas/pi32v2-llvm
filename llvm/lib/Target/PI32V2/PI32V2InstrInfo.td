@@ -106,13 +106,13 @@ def PseudoDBNZ : PI32V2Pseudo<(outs GPR:$dst), (ins GPR:$r, dbnz_target:$n)>;
 // A trap (llvm.trap, llvm.debugtrap, llvm.ubsantrap): btbclr, which the AC791N takes as an illegal instruction
 // (the CPU exception, vector 1, with EMU_MSG 2, seen on an FM-1: pi32v2-isa hw/fm1-2026-10-24-app2), then a goto to
 // itself, so that a core where it doesn't trap stops there instead of running on (PI32V2AsmPrinter). Without it,
-// a trap was a call to abort().
-let isTerminator = 1, isBarrier = 1, hasSideEffects = 1, isTrap = 1 in
+// a trap was a call to abort(). Not a terminator, as other targets' traps aren't: IR may have code after one in its
+// block. With no debugger to return to, llvm.debugtrap traps the same way. Two instructions, so never in an if block
+// (PI32V2IfBlocks).
+let hasSideEffects = 1, isTrap = 1 in
 def PseudoTRAP : PI32V2Pseudo<(outs), (ins), [(trap)]>;
+def : Pat<(debugtrap), (PseudoTRAP)>;
 def : Pat<(ubsantrap (i32 timm)), (PseudoTRAP)>;
-// llvm.debugtrap may return in IR, so it's no terminator; with no debugger to return to, it traps the same way.
-let hasSideEffects = 1 in
-def PseudoDEBUGTRAP : PI32V2Pseudo<(outs), (ins), [(debugtrap)]>;
 
 // return: rts, or the epilogue's {pc, ...} = [sp++].
 let isReturn = 1, isTerminator = 1, isBarrier = 1, Uses = [RETS] in

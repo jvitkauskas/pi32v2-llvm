@@ -149,7 +149,8 @@ static bool partCount(MachineBasicBlock &MBB, bool AllowLastExit,
     if (MI.isMetaInstruction() || MI.isInlineAsm() || MI.isBundle() ||
         MI.isCFIInstruction() || MI.isConditionalBranch() ||
         MI.isIndirectBranch() || // a switch's table follows it
-        PI32V2::isIfOpener(MI.getOpcode()) || isSelect(MI.getOpcode()))
+        PI32V2::isIfOpener(MI.getOpcode()) || isSelect(MI.getOpcode()) ||
+        MI.getOpcode() == PI32V2::PseudoTRAP) // btbclr, then a goto
       return false;
     if (Last && Last->isTerminator())
       return false; // something after a terminator

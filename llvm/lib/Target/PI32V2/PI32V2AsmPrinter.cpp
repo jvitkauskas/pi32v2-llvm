@@ -413,8 +413,7 @@ void PI32V2AsmPrinter::emitOne(const MachineInstr *MI) {
   case PI32V2::SELECT_CC_RII:
     emitSelect(MI);
     return;
-  case PI32V2::PseudoTRAP:
-  case PI32V2::PseudoDEBUGTRAP: {
+  case PI32V2::PseudoTRAP: {
     // btbclr traps as an illegal instruction; the goto to itself is for a core where it doesn't.
     Inst.setOpcode(PI32V2::BTBCLR);
     EmitToStreamer(*OutStreamer, Inst);
