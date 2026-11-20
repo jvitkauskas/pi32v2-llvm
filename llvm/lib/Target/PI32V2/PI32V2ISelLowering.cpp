@@ -77,6 +77,10 @@ PI32V2TargetLowering::PI32V2TargetLowering(const TargetMachine &TM,
     setOperationAction(Op, MVT::i32, Custom);
 
   setOperationAction(ISD::BR_CC, MVT::i32, Legal);
+  // Traps are an instruction of their own (PseudoTRAP), not a call to abort().
+  setOperationAction(ISD::TRAP, MVT::Other, Legal);
+  setOperationAction(ISD::DEBUGTRAP, MVT::Other, Legal);
+  setOperationAction(ISD::UBSANTRAP, MVT::Other, Legal);
   setOperationAction(ISD::BRCOND, MVT::Other, Expand);
   setOperationAction(ISD::BR_JT, MVT::Other, Custom);
   setOperationAction(ISD::SETCC, MVT::i32, Expand);

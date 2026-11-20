@@ -413,6 +413,19 @@ void PI32V2AsmPrinter::emitOne(const MachineInstr *MI) {
   case PI32V2::SELECT_CC_RII:
     emitSelect(MI);
     return;
+  case PI32V2::PseudoTRAP:
+  case PI32V2::PseudoDEBUGTRAP: {
+    // btbclr traps as an illegal instruction; the goto to itself is for a core where it doesn't.
+    Inst.setOpcode(PI32V2::BTBCLR);
+    EmitToStreamer(*OutStreamer, Inst);
+    MCSymbol *Here = OutContext.createTempSymbol();
+    OutStreamer->emitLabel(Here);
+    MCInst Loop;
+    Loop.setOpcode((IfThen || IfElse) ? PI32V2::GOTO_L : PI32V2::GOTO_S);
+    Loop.addOperand(MCOperand::createExpr(MCSymbolRefExpr::create(Here, OutContext)));
+    EmitToStreamer(*OutStreamer, Loop);
+    return;
+  }
   case PI32V2::PseudoRET:
     // an interrupt handler returns to reti
     Inst.setOpcode(MF->getFunction().hasFnAttribute("interrupt") ? PI32V2::RTI
