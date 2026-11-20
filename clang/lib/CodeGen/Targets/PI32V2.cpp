@@ -10,7 +10,8 @@
 // of one stream (the backend's calling convention places them); every
 // aggregate is passed as a pointer to a copy the caller makes, and returned
 // through a hidden pointer, the first slot. va_list is a pointer to the next
-// word; va_arg of an aggregate reads a pointer to its copy.
+// word; va_arg of an argument passed by reference (an aggregate, a _BitInt wider than 64 bits)
+// reads a pointer to its copy.
 //
 //===----------------------------------------------------------------------===//
 
@@ -55,7 +56,10 @@ public:
 
   RValue EmitVAArg(CodeGenFunction &CGF, Address VAListAddr, QualType Ty,
                    AggValueSlot Slot) const override {
-    return emitVoidPtrVAArg(CGF, VAListAddr, Ty, isAggregateTypeForABI(Ty),
+    // Read as the caller passed it: by reference where classifyArgumentType says so (aggregates, and
+    // _BitInt wider than 64 bits), and inline otherwise (a transparent union as its first field).
+    return emitVoidPtrVAArg(CGF, VAListAddr, Ty,
+                            classifyArgumentType(Ty).isIndirect(),
                             getContext().getTypeInfoInChars(Ty),
                             CharUnits::fromQuantity(4),
                             /*AllowHigherAlign=*/false, Slot);
