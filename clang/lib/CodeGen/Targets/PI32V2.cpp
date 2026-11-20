@@ -56,11 +56,23 @@ public:
 
   RValue EmitVAArg(CodeGenFunction &CGF, Address VAListAddr, QualType Ty,
                    AggValueSlot Slot) const override {
-    // Read as the caller passed it: by reference where classifyArgumentType says so (aggregates, and
-    // _BitInt wider than 64 bits), and inline otherwise (a transparent union as its first field).
-    return emitVoidPtrVAArg(CGF, VAListAddr, Ty,
-                            classifyArgumentType(Ty).isIndirect(),
-                            getContext().getTypeInfoInChars(Ty),
+    // Read as the caller passed it (classifyArgumentType). By reference (aggregates, _BitInt wider than
+    // 64 bits): a pointer word, to a copy only as aligned as the caller made it. Inline otherwise: a
+    // transparent union passed as its first field takes that field's slots, not the union's size.
+    // A call site classifies an argument's canonical type: alignment a typedef adds isn't the copy's.
+    ABIArgInfo AI = classifyArgumentType(Ty.getCanonicalType());
+    TypeInfoChars Info = getContext().getTypeInfoInChars(Ty);
+    if (AI.isIndirect()) {
+      Info.Align = AI.getIndirectAlign();
+    } else {
+      QualType Passed = useFirstFieldIfTransparentUnion(Ty);
+      if (Passed != Ty) {
+        TypeInfoChars Field = getContext().getTypeInfoInChars(Passed);
+        Info.Width = Field.Width;
+        Info.Align = Field.Align;
+      }
+    }
+    return emitVoidPtrVAArg(CGF, VAListAddr, Ty, AI.isIndirect(), Info,
                             CharUnits::fromQuantity(4),
                             /*AllowHigherAlign=*/false, Slot);
   }
