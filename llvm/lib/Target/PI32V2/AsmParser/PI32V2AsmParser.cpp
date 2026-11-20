@@ -930,6 +930,13 @@ bool PI32V2AsmParser::parseInstruction(ParseInstructionInfo &Info,
 bool PI32V2AsmParser::parseLine(StringRef Line, SMLoc NameLoc) {
   MCContext &Ctx = getContext();
 
+  // A block's braces are structure, not instructions: written to an object
+  // they only close it, but text output (inline asm in a .s file) needs them
+  // written out, or it doesn't assemble again.
+  MCStreamer &Out = getParser().getStreamer();
+  if ((Line == "}" || Line == "}else{") && Out.hasRawTextSupport() &&
+      !Blocks.empty())
+    Out.emitRawText(Line == "}" ? "\t}" : "\t} else {");
   if (Line == "}") {
     if (Blocks.empty())
       return Error(NameLoc, "unmatched }");
