@@ -420,7 +420,9 @@ void PI32V2AsmPrinter::emitOne(const MachineInstr *MI) {
     MCSymbol *Here = OutContext.createTempSymbol();
     OutStreamer->emitLabel(Here);
     MCInst Loop;
-    Loop.setOpcode((IfThen || IfElse) ? PI32V2::GOTO_L : PI32V2::GOTO_S);
+    // PI32V2IfBlocks never puts a trap in an if block, where a goto takes its 32-bit form.
+    assert(!IfThen && !IfElse && "a trap in an if block");
+    Loop.setOpcode(PI32V2::GOTO_S);
     Loop.addOperand(MCOperand::createExpr(MCSymbolRefExpr::create(Here, OutContext)));
     EmitToStreamer(*OutStreamer, Loop);
     return;

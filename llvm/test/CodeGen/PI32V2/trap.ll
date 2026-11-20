@@ -69,11 +69,12 @@ done:
 }
 
 ; CHECK-LABEL: cond_debugtrap:
+; CHECK:       if (r0 != 17) goto [[DONE:\.LBB[0-9_]+]]
 ; CHECK-NOT:   {
 ; CHECK:       btbclr
 ; CHECK-NEXT:  [[L:\.Ltmp[0-9]+]]:
 ; CHECK-NEXT:  goto [[L]]
-; CHECK-NEXT:  [[DONE:\.LBB[0-9_]+]]:
+; CHECK-NEXT:  [[DONE]]:
 define i32 @cond_debugtrap(i32 %a, ptr %p) {
   %c = icmp eq i32 %a, 17
   br i1 %c, label %stop, label %done
@@ -101,6 +102,10 @@ define void @after_trap(ptr %p) {
 
 ; In the object, the branch around the trap goes past both of its instructions (4 bytes).
 ; OBJ-LABEL: <cond_trap>:
+; OBJ:       if (r0 != 17) goto 4
+; OBJ-NEXT:  btbclr
+; OBJ-NEXT:  goto -2
+; OBJ-LABEL: <cond_debugtrap>:
 ; OBJ:       if (r0 != 17) goto 4
 ; OBJ-NEXT:  btbclr
 ; OBJ-NEXT:  goto -2
