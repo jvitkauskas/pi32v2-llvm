@@ -23,3 +23,16 @@ define i32 @if_else(i32 %x) {
   %v = call i32 asm "if ($0 != 0) {\0A$0 = 1\0A}else{\0A$0 = 2\0A}", "=r,0"(i32 %x)
   ret i32 %v
 }
+
+; A rep block parsed from inline asm is written as a block, `rep r1 {` (its length is the block's),
+; not with the length's expression, which wouldn't assemble.
+; CHECK-LABEL: rep_if:
+; CHECK:       rep r1 {
+; CHECK:       if (r0 != 0) {
+; CHECK:       } else {
+; CHECK:       }
+; CHECK:       }
+define i32 @rep_if(i32 %x, i32 %n) {
+  %v = call i32 asm "rep $2 {\0Aif ($0 != 0) {\0A$0 = 1\0A}else{\0A$0 = 2\0A}\0A}", "=r,0,r"(i32 %x, i32 %n)
+  ret i32 %v
+}

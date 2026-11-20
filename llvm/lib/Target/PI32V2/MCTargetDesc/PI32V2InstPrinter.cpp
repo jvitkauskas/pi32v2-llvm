@@ -34,6 +34,20 @@ void PI32V2InstPrinter::printInst(const MCInst *MI, uint64_t Address,
                                   StringRef Annot, const MCSubtargetInfo &STI,
                                   raw_ostream &O) {
   O << '\t';
+  // A rep block parsed from assembly has its body's length as an expression
+  // (its end minus its start): written as a block, `rep r1 {`, the length is
+  // the block's own, which is how it is parsed again.
+  if ((MI->getOpcode() == PI32V2::REP || MI->getOpcode() == PI32V2::REP_I) &&
+      MI->getOperand(0).isExpr()) {
+    O << "rep ";
+    if (MI->getOpcode() == PI32V2::REP)
+      printOperand(MI, 1, O);
+    else
+      printOpuimm_5_1_1_N_F(MI, 1, O);
+    O << " {";
+    printAnnotation(O, Annot);
+    return;
+  }
   printInstruction(MI, Address, O);
   printAnnotation(O, Annot);
 }

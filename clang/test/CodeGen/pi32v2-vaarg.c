@@ -9,9 +9,10 @@ typedef _BitInt(128) wide;
 struct S { int a, b; };
 typedef union { int i; float f; } __attribute__((transparent_union)) TU;
 
-// The caller passes a 128-bit _BitInt by reference to a copy.
+// The caller passes a 128-bit _BitInt by reference to a copy it makes, as it does an aggregate (not
+// byval, whose copy the backend would make, only 4-aligned, in the argument area).
 // CHECK-LABEL: @call(
-// CHECK: call i32 (i32, ...) @f(i32 noundef 1, ptr noundef nonnull byval(i128) align 4 %{{.*}}, i32 noundef 42)
+// CHECK: call i32 (i32, ...) @f(i32 noundef 1, ptr noundef nonnull align 4 dead_on_return %{{.*}}, i32 noundef 42)
 int f(int n, ...);
 int call(void) { return f(1, (wide)4, 42); }
 
@@ -41,9 +42,12 @@ struct S get_struct(__builtin_va_list *ap) { return __builtin_va_arg(*ap, struct
 // CHECK: load i32, ptr %argp.cur
 TU get_tu(__builtin_va_list *ap) { return __builtin_va_arg(*ap, TU); }
 
-// An over-aligned transparent union takes its first field's slot, one word: the next argument
-// follows it, not 16 bytes on.
+// An over-aligned transparent union is passed as its first field alone, one word (not as the padded
+// union), and va_arg takes that word: the next argument follows it.
 typedef union { int i; float f; } __attribute__((transparent_union, aligned(16))) ATU;
+// CHECK-LABEL: @call_atu(
+// CHECK: call i32 (i32, ...) @f(i32 noundef 1, i32 %{{.*}}, i32 noundef 42)
+int call_atu(ATU *u) { return f(1, *u, 42); }
 // CHECK-LABEL: @after_atu(
 // CHECK: %argp.next = getelementptr inbounds nuw i8, ptr %argp.cur, i32 4
 // CHECK: load i32, ptr %argp.next
@@ -63,9 +67,31 @@ int get_stu(__builtin_va_list *ap) { return __builtin_va_arg(*ap, STU).i; }
 // va_arg reads it so.
 typedef _BitInt(65) AWide __attribute__((aligned(32)));
 // CHECK-LABEL: @call_awide(
-// CHECK: byval(i96) align 4
+// CHECK: call i32 (i32, ...) @f(i32 noundef 1, ptr noundef nonnull align 4 dead_on_return %{{.*}}, i32 noundef 42)
 int call_awide(AWide *w) { return f(1, *w, 42); }
 // CHECK-LABEL: @get_awide(
 // CHECK: [[P:%.*]] = load ptr, ptr %argp.cur
 // CHECK-NEXT: load i96, ptr [[P]], align 4
 AWide get_awide(__builtin_va_list *ap) { return __builtin_va_arg(*ap, AWide); }
+
+// Fetched whole, a transparent union is its first field, read from its slot, then put in a union:
+// no copy of the union's 16 bytes from a 4-byte slot.
+typedef union { unsigned char a; signed char b; } __attribute__((transparent_union, aligned(16))) BTU;
+// CHECK-LABEL: @get_btu(
+// CHECK-NOT: memcpy
+// CHECK: [[B:%.*]] = load i8, ptr %argp.cur
+// CHECK-NEXT: store i8 [[B]], ptr %agg.result
+BTU get_btu(__builtin_va_list *ap) { return __builtin_va_arg(*ap, BTU); }
+
+// A transparent union whose first field is an over-aligned _BitInt goes by reference to a copy the
+// caller makes 32-aligned, and va_arg reads it so.
+typedef _BitInt(65) W32 __attribute__((aligned(32)));
+typedef union { W32 x; W32 y; } __attribute__((transparent_union)) WTU;
+// CHECK-LABEL: @call_wtu(
+// CHECK: alloca %union.WTU, align 32
+// CHECK: call i32 (i32, ...) @f(i32 noundef 1, ptr noundef nonnull align 32 dead_on_return %{{.*}}, i32 noundef 42)
+int call_wtu(WTU *w) { return f(1, *w, 42); }
+// CHECK-LABEL: @get_wtu(
+// CHECK: [[P:%.*]] = load ptr, ptr %argp.cur
+// CHECK-NEXT: load i96, ptr [[P]], align 32
+W32 get_wtu(__builtin_va_list *ap) { return __builtin_va_arg(*ap, WTU).x; }

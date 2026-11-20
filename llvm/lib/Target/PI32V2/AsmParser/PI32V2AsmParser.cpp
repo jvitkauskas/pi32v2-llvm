@@ -223,6 +223,15 @@ public:
            Kind == AsmToken::RCurly || Kind == AsmToken::LParen;
   }
   bool equalIsAsmAssignment() override { return false; }
+  // A block still open at the end (of a file, or of an inline asm statement):
+  // its lengths were never set.
+  void onEndOfFile() override {
+    if (!Blocks.empty()) {
+      SMLoc Loc = Blocks.back().Loc;
+      Blocks.clear();
+      Error(Loc, "this block has no closing }");
+    }
+  }
   void convertToMapAndConstraints(unsigned Kind,
                                   const OperandVector &Operands) override {}
 

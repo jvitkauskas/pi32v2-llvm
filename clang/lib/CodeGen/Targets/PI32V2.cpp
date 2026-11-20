@@ -27,15 +27,27 @@ public:
   PI32V2ABIInfo(CodeGen::CodeGenTypes &CGT) : DefaultABIInfo(CGT) {}
 
   ABIArgInfo classifyArgumentType(QualType Ty) const {
+    QualType Given = Ty;
     Ty = useFirstFieldIfTransparentUnion(Ty);
+    unsigned AS = getDataLayout().getAllocaAddrSpace();
     if (isAggregateTypeForABI(Ty)) {
-      unsigned AS = getDataLayout().getAllocaAddrSpace();
       if (CGCXXABI::RecordArgABI RAA = getRecordArgABI(Ty, getCXXABI()))
         return getNaturalAlignIndirect(Ty, AS,
                                        RAA == CGCXXABI::RAA_DirectInMemory);
       return getNaturalAlignIndirect(Ty, AS, /*ByVal=*/false);
     }
-    return DefaultABIInfo::classifyArgumentType(Ty);
+    ABIArgInfo Info = DefaultABIInfo::classifyArgumentType(Ty);
+    // What DefaultABIInfo passes by reference (a _BitInt wider than 64 bits)
+    // goes as an aggregate does: a pointer to a copy the caller makes in its
+    // own frame, aligned as the type is. The same pointer word as byval, whose
+    // copy the backend makes in the 4-aligned argument area instead.
+    if (Info.isIndirect())
+      return getNaturalAlignIndirect(Ty, AS, /*ByVal=*/false);
+    // A transparent union goes as its first field: as that field's own type,
+    // not the union's, which an alignment attribute may pad.
+    if (Ty != Given && Info.canHaveCoerceToType() && !Info.getCoerceToType())
+      Info.setCoerceToType(CGT.ConvertType(Ty));
+    return Info;
   }
 
   ABIArgInfo classifyReturnType(QualType RetTy) const {
@@ -62,16 +74,23 @@ public:
     // A call site classifies an argument's canonical type: alignment a typedef adds isn't the copy's.
     ABIArgInfo AI = classifyArgumentType(Ty.getCanonicalType());
     TypeInfoChars Info = getContext().getTypeInfoInChars(Ty);
-    if (AI.isIndirect()) {
-      Info.Align = AI.getIndirectAlign();
-    } else {
-      QualType Passed = useFirstFieldIfTransparentUnion(Ty);
-      if (Passed != Ty) {
-        TypeInfoChars Field = getContext().getTypeInfoInChars(Passed);
-        Info.Width = Field.Width;
-        Info.Align = Field.Align;
-      }
+    QualType Passed = useFirstFieldIfTransparentUnion(Ty);
+    if (!AI.isIndirect() && Passed != Ty) {
+      // A transparent union passed as its first field: read the field, in its
+      // own slots, and make the union of it (the union may be larger).
+      RValue Field = emitVoidPtrVAArg(
+          CGF, VAListAddr, Passed, /*IsIndirect=*/false,
+          getContext().getTypeInfoInChars(Passed), CharUnits::fromQuantity(4),
+          /*AllowHigherAlign=*/false, AggValueSlot::ignored());
+      Address Union = CGF.CreateMemTemp(Ty, "va.union");
+      CGF.EmitStoreOfScalar(
+          Field.getScalarVal(),
+          CGF.MakeAddrLValue(
+              Union.withElementType(CGF.ConvertTypeForMem(Passed)), Passed));
+      return CGF.EmitLoadOfAnyValue(CGF.MakeAddrLValue(Union, Ty), Slot);
     }
+    if (AI.isIndirect())
+      Info.Align = AI.getIndirectAlign();
     return emitVoidPtrVAArg(CGF, VAListAddr, Ty, AI.isIndirect(), Info,
                             CharUnits::fromQuantity(4),
                             /*AllowHigherAlign=*/false, Slot);
