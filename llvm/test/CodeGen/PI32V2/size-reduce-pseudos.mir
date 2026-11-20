@@ -4,6 +4,8 @@
 --- |
   define void @select_constant() { ret void }
   define void @post_load() { ret void }
+  define void @pre_load() { ret void }
+  define void @pre_store() { ret void }
   define void @direct_spill() { ret void }
   define void @large_frame() { ret void }
 ...
@@ -44,6 +46,50 @@ body: |
     GOTO_S %bb.1
   bb.1:
     liveins: $r8
+    $r0 = COPY killed renamable $r8
+    PseudoRET $r0, implicit $rets
+...
+# Pre-increment accesses (base anchors) are costed as their forms too: a base
+# register in one no longer keeps the function from moving it low.
+---
+name: pre_load
+tracksRegLiveness: true
+body: |
+  bb.0:
+    successors: %bb.1
+    liveins: $r0
+    ; CHECK-LABEL: name: pre_load
+    ; CHECK: renamable $r4 = COPY $r0
+    ; CHECK-NEXT: $r1, renamable $r4 = LDW_PRE renamable $r4, 76
+    ; DISABLED-LABEL: name: pre_load
+    ; DISABLED: renamable $r8 = COPY $r0
+    renamable $r8 = COPY $r0
+    $r1, renamable $r8 = LDW_PRE renamable $r8, 76
+    GOTO_S %bb.1
+  bb.1:
+    liveins: $r1, $r8
+    ST_W_L $r1, 0, renamable $r8
+    $r0 = COPY killed renamable $r8
+    PseudoRET $r0, implicit $rets
+...
+---
+name: pre_store
+tracksRegLiveness: true
+body: |
+  bb.0:
+    successors: %bb.1
+    liveins: $r0, $r1
+    ; CHECK-LABEL: name: pre_store
+    ; CHECK: renamable $r4 = COPY $r0
+    ; CHECK-NEXT: renamable $r4 = STW_PRE renamable $r4, 64, $r1
+    ; DISABLED-LABEL: name: pre_store
+    ; DISABLED: renamable $r8 = COPY $r0
+    renamable $r8 = COPY $r0
+    renamable $r8 = STW_PRE renamable $r8, 64, $r1
+    GOTO_S %bb.1
+  bb.1:
+    liveins: $r1, $r8
+    ST_W_L $r1, 0, renamable $r8
     $r0 = COPY killed renamable $r8
     PseudoRET $r0, implicit $rets
 ...

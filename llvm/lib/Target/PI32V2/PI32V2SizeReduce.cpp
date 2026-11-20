@@ -64,22 +64,11 @@ static bool isScalarMove(const MachineInstr &MI) {
          PI32V2::GPRRegClass.contains(MI.getOperand(1).getReg());
 }
 
+// The increment pseudos' forms, as PI32V2AsmPrinter emits them: post-increment
+// and pre-increment (base anchors) alike, so that their registers can be
+// recolored and costed too.
 static unsigned postOpcode(unsigned Opc, unsigned &Skip) {
-  Skip = 1;
-  switch (Opc) {
-  case PI32V2::LDW_POST: return PI32V2::LD_W_PIN_L;
-  case PI32V2::LDHU_POST: return PI32V2::LD_HU_PIN_L;
-  case PI32V2::LDHS_POST: return PI32V2::LD_HS_PIN_L;
-  case PI32V2::LDBU_POST: return PI32V2::LD_BU_PIN_L;
-  case PI32V2::LDBS_POST: return PI32V2::LD_BS_PIN_L;
-  }
-  Skip = 0;
-  switch (Opc) {
-  case PI32V2::STW_POST: return PI32V2::ST_W_PIN_L;
-  case PI32V2::STH_POST: return PI32V2::ST_H_PIN_L;
-  case PI32V2::STB_POST: return PI32V2::ST_B_PIN_L;
-  }
-  return 0;
+  return PI32V2InstrInfo::postIncForm(Opc, Skip);
 }
 
 static bool isSelect(unsigned Opc) {
