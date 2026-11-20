@@ -95,3 +95,19 @@ int call_wtu(WTU *w) { return f(1, *w, 42); }
 // CHECK: [[P:%.*]] = load ptr, ptr %argp.cur
 // CHECK-NEXT: load i96, ptr [[P]], align 32
 W32 get_wtu(__builtin_va_list *ap) { return __builtin_va_arg(*ap, WTU).x; }
+
+// A transparent union goes as its first field's in-memory type, so a value stored through another
+// member loses no bit: a bool as i8, a _BitInt(33) as i64. va_arg copies those bytes.
+typedef union { _Bool b; unsigned char c; } __attribute__((transparent_union)) BoolTU;
+typedef union { _BitInt(33) x; unsigned long long y; } __attribute__((transparent_union)) B33TU;
+// CHECK-LABEL: @call_booltu(
+// CHECK: call i32 (i32, ...) @f(i32 noundef 1, i8 noundef zeroext -91, i32 noundef 42)
+int call_booltu(void) { BoolTU u; u.c = 0xA5; return f(1, u, 42); }
+// CHECK-LABEL: @call_b33tu(
+// CHECK: call i32 (i32, ...) @f(i32 noundef 1, i64 -1, i32 noundef 42)
+int call_b33tu(void) { B33TU u; u.y = ~0ull; return f(1, u, 42); }
+// CHECK-LABEL: @get_booltu(
+// CHECK: [[C:%.*]] = load i8, ptr %argp.cur
+// CHECK-NOT: trunc
+// CHECK: zext i8 [[C]] to i32
+int get_booltu(__builtin_va_list *ap) { return __builtin_va_arg(*ap, BoolTU).c; }

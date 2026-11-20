@@ -43,10 +43,12 @@ public:
     // copy the backend makes in the 4-aligned argument area instead.
     if (Info.isIndirect())
       return getNaturalAlignIndirect(Ty, AS, /*ByVal=*/false);
-    // A transparent union goes as its first field: as that field's own type,
-    // not the union's, which an alignment attribute may pad.
-    if (Ty != Given && Info.canHaveCoerceToType() && !Info.getCoerceToType())
-      Info.setCoerceToType(CGT.ConvertType(Ty));
+    // A transparent union goes as its first field: in that field's slots, not
+    // the union's, which an alignment attribute may pad. As the field's
+    // in-memory type (i8 for a bool, i64 for a _BitInt(33)), so that no stored
+    // bit of another member is lost.
+    if (Ty != Given && Info.canHaveCoerceToType())
+      Info.setCoerceToType(CGT.ConvertTypeForMem(Ty));
     return Info;
   }
 
@@ -76,17 +78,16 @@ public:
     TypeInfoChars Info = getContext().getTypeInfoInChars(Ty);
     QualType Passed = useFirstFieldIfTransparentUnion(Ty);
     if (!AI.isIndirect() && Passed != Ty) {
-      // A transparent union passed as its first field: read the field, in its
-      // own slots, and make the union of it (the union may be larger).
-      RValue Field = emitVoidPtrVAArg(
-          CGF, VAListAddr, Passed, /*IsIndirect=*/false,
-          getContext().getTypeInfoInChars(Passed), CharUnits::fromQuantity(4),
-          /*AllowHigherAlign=*/false, AggValueSlot::ignored());
+      // A transparent union passed as its first field: the field's stored
+      // bytes, from its own slots, become the union's first bytes (the union
+      // may be larger). Copied as bytes, as the caller passed them, so a bool
+      // or a _BitInt(33) loses no bit of another member.
+      TypeInfoChars Field = getContext().getTypeInfoInChars(Passed);
+      Address Arg = emitVoidPtrDirectVAArg(
+          CGF, VAListAddr, CGF.ConvertTypeForMem(Passed), Field.Width,
+          Field.Align, CharUnits::fromQuantity(4), /*AllowHigherAlign=*/false);
       Address Union = CGF.CreateMemTemp(Ty, "va.union");
-      CGF.EmitStoreOfScalar(
-          Field.getScalarVal(),
-          CGF.MakeAddrLValue(
-              Union.withElementType(CGF.ConvertTypeForMem(Passed)), Passed));
+      CGF.Builder.CreateMemCpy(Union, Arg, Field.Width.getQuantity());
       return CGF.EmitLoadOfAnyValue(CGF.MakeAddrLValue(Union, Ty), Slot);
     }
     if (AI.isIndirect())
