@@ -30,11 +30,14 @@ public:
     QualType Given = Ty;
     Ty = useFirstFieldIfTransparentUnion(Ty);
     unsigned AS = getDataLayout().getAllocaAddrSpace();
+    // Passed by reference, a transparent union is a pointer to a copy of the
+    // union: its first field's bytes come first, and the copy is as aligned as
+    // the union, which the callee takes it to be.
     if (isAggregateTypeForABI(Ty)) {
       if (CGCXXABI::RecordArgABI RAA = getRecordArgABI(Ty, getCXXABI()))
         return getNaturalAlignIndirect(Ty, AS,
                                        RAA == CGCXXABI::RAA_DirectInMemory);
-      return getNaturalAlignIndirect(Ty, AS, /*ByVal=*/false);
+      return getNaturalAlignIndirect(Given, AS, /*ByVal=*/false);
     }
     ABIArgInfo Info = DefaultABIInfo::classifyArgumentType(Ty);
     // What DefaultABIInfo passes by reference (a _BitInt wider than 64 bits)
@@ -42,7 +45,7 @@ public:
     // own frame, aligned as the type is. The same pointer word as byval, whose
     // copy the backend makes in the 4-aligned argument area instead.
     if (Info.isIndirect())
-      return getNaturalAlignIndirect(Ty, AS, /*ByVal=*/false);
+      return getNaturalAlignIndirect(Given, AS, /*ByVal=*/false);
     // A transparent union goes as its first field: in that field's slots, not
     // the union's, which an alignment attribute may pad. As the field's
     // in-memory type (i8 for a bool, i64 for a _BitInt(33)), so that no stored

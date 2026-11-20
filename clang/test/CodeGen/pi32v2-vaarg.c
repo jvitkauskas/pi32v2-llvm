@@ -111,3 +111,20 @@ int call_b33tu(void) { B33TU u; u.y = ~0ull; return f(1, u, 42); }
 // CHECK-NOT: trunc
 // CHECK: zext i8 [[C]] to i32
 int get_booltu(__builtin_va_list *ap) { return __builtin_va_arg(*ap, BoolTU).c; }
+
+// Passed by reference (its first field is a struct), an over-aligned transparent union is a pointer
+// to a copy of the whole union, as aligned as the union, which is what the callee takes it to be.
+struct Pair { int a, b; };
+typedef union { struct Pair p; long long l; } __attribute__((transparent_union, aligned(16))) PTU;
+void take_ptu(PTU u);
+// CHECK-LABEL: @call_ptu(
+// CHECK: [[T:%.*]] = alloca %union.PTU, align 16
+// CHECK: call void @take_ptu(ptr noundef nonnull align 16 dead_on_return [[T]])
+void call_ptu(PTU *u) { take_ptu(*u); }
+// CHECK-LABEL: @def_ptu(
+// CHECK-SAME: ptr {{.*}}align 16 {{.*}}%u)
+long long def_ptu(PTU u) { return u.l; }
+// CHECK-LABEL: @get_ptu(
+// CHECK: [[P:%.*]] = load ptr, ptr %argp.cur
+// CHECK: load i64, ptr [[P]], align 16
+long long get_ptu(__builtin_va_list *ap) { return __builtin_va_arg(*ap, PTU).l; }
