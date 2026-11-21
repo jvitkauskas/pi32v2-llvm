@@ -106,8 +106,12 @@ void PI32V2FrameLowering::emitPrologue(MachineFunction &MF,
     auto B = BuildMI(MBB, I, DL, TII.get(PI32V2::PUSH_RMASK))
                  .addImm(Mask)
                  .setMIFlag(MachineInstr::FrameSetup);
-    for (unsigned R = FI->getFirstVarArgReg(); R < 4; ++R)
+    // The caller's unnamed arguments: live on entry, whatever the body reads.
+    for (unsigned R = FI->getFirstVarArgReg(); R < 4; ++R) {
       B.addReg(PI32V2::R0 + R, RegState::Implicit);
+      if (!MBB.isLiveIn(PI32V2::R0 + R))
+        MBB.addLiveIn(PI32V2::R0 + R);
+    }
     (void)VA;
   }
   if (isInterrupt(MF))
