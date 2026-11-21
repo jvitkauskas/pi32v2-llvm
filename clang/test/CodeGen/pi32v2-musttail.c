@@ -11,6 +11,7 @@ extern int take_s(struct S);
 extern int take_w(_BitInt(128));
 extern int take_a(struct A);
 extern int take_an(struct A, int);
+extern int take_mu(struct A __attribute__((maybe_undef)), int);
 extern int take_i(int, int);
 
 int fwd_s(struct S s) { // expected-error {{this musttail call cannot be a tail call}}
@@ -26,6 +27,13 @@ int fwd_a(struct A a) { // expected-error {{this musttail call cannot be a tail 
 int fwd_a_cond(struct A a, int n) { // expected-error {{this musttail call cannot be a tail call}}
   if (n) {
     [[clang::musttail]] return take_an(a, n);
+  }
+  return 4;
+}
+// maybe_undef freezes the copy's pointer.
+int fwd_a_maybe_undef(struct A a, int n) { // expected-error {{this musttail call cannot be a tail call}}
+  if (n) {
+    [[clang::musttail]] return take_mu(a, n);
   }
   return 4;
 }

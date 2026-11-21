@@ -6,11 +6,12 @@
 ; RUN: sed 's/^; MUSTOFF //' %s | not llc -mtriple=pi32v2 -mcpu=r3 -o /dev/null 2>&1 | FileCheck %s --check-prefix=ERR
 ; RUN: sed 's/^; MUSTALIGN //' %s | not llc -mtriple=pi32v2 -mcpu=r3 -o /dev/null 2>&1 | FileCheck %s --check-prefix=ERR
 ; RUN: sed 's/^; MUSTCOND //' %s | not llc -mtriple=pi32v2 -mcpu=r3 -o /dev/null 2>&1 | FileCheck %s --check-prefix=ERR
+; RUN: sed 's/^; MUSTFREEZE //' %s | not llc -mtriple=pi32v2 -mcpu=r3 -o /dev/null 2>&1 | FileCheck %s --check-prefix=ERR
 ; With -pi32v2-large-program there are no tail calls at all.
 ; RUN: not llc -mtriple=pi32v2 -mcpu=r3 -pi32v2-large-program -o /dev/null < %s 2>&1 \
 ; RUN:   | FileCheck %s --check-prefix=LARGE
 
-; ERR: error: {{.*}}in function {{must|must_off|must_align|must_cond}} {{.*}}PI32V2: this musttail call cannot be a tail call
+; ERR: error: {{.*}}in function {{must|must_off|must_align|must_cond|must_freeze}} {{.*}}PI32V2: this musttail call cannot be a tail call
 ; LARGE: error: {{.*}}in function given {{.*}}PI32V2: no tail calls with -pi32v2-large-program
 
 declare i32 @take(ptr)
@@ -103,3 +104,16 @@ define i32 @given(ptr %p) {
 ; MUSTCOND e:
 ; MUSTCOND   ret i32 4
 ; MUSTCOND }
+
+; clang freezes the copy's pointer for a maybe_undef argument.
+; MUSTFREEZE define i32 @must_freeze(ptr %p, i1 %b) {
+; MUSTFREEZE   %c = alloca [16 x i8], align 16
+; MUSTFREEZE   br i1 %b, label %t, label %e
+; MUSTFREEZE t:
+; MUSTFREEZE   call void @llvm.memcpy.p0.p0.i32(ptr align 16 %c, ptr align 4 %p, i32 16, i1 false)
+; MUSTFREEZE   %f = freeze ptr %c
+; MUSTFREEZE   %r = musttail call i32 @take2(ptr %f, i1 %b)
+; MUSTFREEZE   ret i32 %r
+; MUSTFREEZE e:
+; MUSTFREEZE   ret i32 4
+; MUSTFREEZE }

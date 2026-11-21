@@ -28,6 +28,7 @@
 #include "llvm/Analysis/ValueTracking.h"
 #include "llvm/IR/DiagnosticInfo.h"
 #include "llvm/IR/Function.h"
+#include "llvm/IR/Instructions.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/ErrorHandling.h"
 
@@ -635,15 +636,21 @@ SDValue PI32V2TargetLowering::LowerCall(CallLoweringInfo &CLI,
     // caller's, and stay. The IR says where a pointer comes from across
     // blocks: a copy aligned beyond the stack's alignment is rounded up in its
     // room in the entry block (PI32V2AlignAllocas, llvm.ptrmask), and a later
-    // block sees only a register.
+    // block sees only a register. clang freezes the copy's pointer for a
+    // maybe_undef argument, which getUnderlyingObject doesn't look through.
     if (CLI.CB)
-      for (const Value *A : CLI.CB->args())
-        if (A->getType()->isPointerTy())
-          Ok &= !isa<AllocaInst>(getUnderlyingObject(A));
+      for (const Value *A : CLI.CB->args()) {
+        if (!A->getType()->isPointerTy())
+          continue;
+        const Value *O = getUnderlyingObject(A);
+        while (auto *Fr = dyn_cast<FreezeInst>(O))
+          O = getUnderlyingObject(Fr->getOperand(0));
+        Ok &= !isa<AllocaInst>(O);
+      }
     // Calls with no IR call (libcalls) are checked in the DAG, through
-    // constant offsets and that rounding ((sp + 15) & ~15).
+    // constant offsets, that rounding ((sp + 15) & ~15) and freeze.
     for (SDValue V : CLI.OutVals) {
-      while (DAG.isBaseWithConstantOffset(V) ||
+      while (DAG.isBaseWithConstantOffset(V) || V.getOpcode() == ISD::FREEZE ||
              (V.getOpcode() == ISD::AND && isa<ConstantSDNode>(V.getOperand(1))))
         V = V.getOperand(0);
       if (auto *FI = dyn_cast<FrameIndexSDNode>(V))
