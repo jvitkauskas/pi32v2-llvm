@@ -1,10 +1,11 @@
 # pi32v2-llvm
 
-LLVM 23.1.5 with an experimental target for **pi32v2**, the CPU core of JieLi's AC79 chips (the AC791N in the
+LLVM 23.1.6 with an experimental target for **pi32v2**, the CPU core of JieLi's AC79 chips (the AC791N in the
 M-VAVE FM-1 and SMK-37 Pro): clang, `ld.lld` and the binary tools, able to build that firmware without JieLi's
 closed toolchain. Unofficial; not affiliated with JieLi or M-VAVE.
 
-This branch (`pi32v2`) is the release tag `llvmorg-23.1.5` with the target's commits on top. The target lives in
+This branch (`pi32v2`) is the release tag `llvmorg-23.1.5` with the target's commits on top, and `llvmorg-23.1.6`
+merged into it. The target lives in
 `llvm/lib/Target/PI32V2`, with small hooks elsewhere (the triple, ELF machine 241 and its relocations, clang's
 target and `interrupt` attribute, the `ld.lld` port in `lld/ELF/Arch/PI32V2.cpp`) and tests in
 `llvm/test/CodeGen/PI32V2`, `llvm/test/MC/PI32V2`, `llvm/test/MC/Disassembler/PI32V2` and
