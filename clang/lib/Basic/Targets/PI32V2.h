@@ -34,6 +34,10 @@ public:
     DoubleAlign = 32;
     LongDoubleWidth = 64;
     LongDoubleAlign = 32;
+    // __int128 exists only with -fforce-enable-int128. Word-aligned then, as
+    // the data layout has i128 (and as Rust's i128 is), so a struct holding
+    // one is laid out as the backend and Rust lay it out.
+    Int128Align = 32;
     LongDoubleFormat = &llvm::APFloat::IEEEdouble();
     SuitableAlign = 32;
     SizeType = UnsignedLong;
