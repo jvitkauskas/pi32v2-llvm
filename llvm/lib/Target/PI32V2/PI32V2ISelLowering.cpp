@@ -25,7 +25,10 @@
 #include "llvm/CodeGen/MachineFunction.h"
 #include "llvm/CodeGen/MachineInstrBuilder.h"
 #include "llvm/CodeGen/MachineRegisterInfo.h"
+#include "llvm/Analysis/ValueTracking.h"
+#include "llvm/IR/DiagnosticInfo.h"
 #include "llvm/IR/Function.h"
+#include "llvm/IR/Instructions.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/ErrorHandling.h"
 
@@ -77,6 +80,10 @@ PI32V2TargetLowering::PI32V2TargetLowering(const TargetMachine &TM,
     setOperationAction(Op, MVT::i32, Custom);
 
   setOperationAction(ISD::BR_CC, MVT::i32, Legal);
+  // Traps are an instruction of their own (PseudoTRAP), not a call to abort().
+  setOperationAction(ISD::TRAP, MVT::Other, Legal);
+  setOperationAction(ISD::DEBUGTRAP, MVT::Other, Legal);
+  setOperationAction(ISD::UBSANTRAP, MVT::Other, Legal);
   setOperationAction(ISD::BRCOND, MVT::Other, Expand);
   setOperationAction(ISD::BR_JT, MVT::Other, Custom);
   setOperationAction(ISD::SETCC, MVT::i32, Expand);
@@ -603,9 +610,16 @@ SDValue PI32V2TargetLowering::LowerCall(CallLoweringInfo &CLI,
   // compiler does it, when nothing of the caller's frame is still needed: the
   // arguments all in registers, a direct callee, no struct returned through
   // memory, and an ordinary caller (not variadic, not an interrupt handler).
+  // A musttail call that can't be one is the user's error, reported against
+  // the function (clang shows it as an error with its location); the call is
+  // then lowered as an ordinary call.
+  auto MustTailError = [&](const char *Why) {
+    DAG.getContext()->diagnose(DiagnosticInfoUnsupported(
+        MF.getFunction(), Why, CLI.DL.getDebugLoc()));
+  };
   if (CLI.IsTailCall && isPI32V2LargeProgram()) {
     if (CLI.CB && CLI.CB->isMustTailCall())
-      report_fatal_error("PI32V2: no tail calls with -pi32v2-large-program");
+      MustTailError("PI32V2: no tail calls with -pi32v2-large-program");
     CLI.IsTailCall = false;
   }
   if (CLI.IsTailCall) {
@@ -616,8 +630,34 @@ SDValue PI32V2TargetLowering::LowerCall(CallLoweringInfo &CLI,
                isa<ExternalSymbolSDNode>(Callee));
     for (const ISD::OutputArg &O : CLI.Outs)
       Ok &= !O.Flags.isByVal() && !O.Flags.isSRet();
+    // Nor a pointer into the caller's own frame, which the goto gives up: an
+    // aggregate (or a _BitInt wider than 64 bits) goes as a pointer to a copy
+    // the caller makes there. Its incoming arguments (fixed objects) are its
+    // caller's, and stay. The IR says where a pointer comes from across
+    // blocks: a copy aligned beyond the stack's alignment is rounded up in its
+    // room in the entry block (PI32V2AlignAllocas, llvm.ptrmask), and a later
+    // block sees only a register. clang freezes the copy's pointer for a
+    // maybe_undef argument, which getUnderlyingObject doesn't look through.
+    if (CLI.CB)
+      for (const Value *A : CLI.CB->args()) {
+        if (!A->getType()->isPointerTy())
+          continue;
+        const Value *O = getUnderlyingObject(A);
+        while (auto *Fr = dyn_cast<FreezeInst>(O))
+          O = getUnderlyingObject(Fr->getOperand(0));
+        Ok &= !isa<AllocaInst>(O);
+      }
+    // Calls with no IR call (libcalls) are checked in the DAG, through
+    // constant offsets, that rounding ((sp + 15) & ~15) and freeze.
+    for (SDValue V : CLI.OutVals) {
+      while (DAG.isBaseWithConstantOffset(V) || V.getOpcode() == ISD::FREEZE ||
+             (V.getOpcode() == ISD::AND && isa<ConstantSDNode>(V.getOperand(1))))
+        V = V.getOperand(0);
+      if (auto *FI = dyn_cast<FrameIndexSDNode>(V))
+        Ok &= MF.getFrameInfo().isFixedObjectIndex(FI->getIndex());
+    }
     if (!Ok && CLI.CB && CLI.CB->isMustTailCall())
-      report_fatal_error("PI32V2: this musttail call cannot be a tail call");
+      MustTailError("PI32V2: this musttail call cannot be a tail call");
     CLI.IsTailCall = Ok;
   }
   bool Tail = CLI.IsTailCall;

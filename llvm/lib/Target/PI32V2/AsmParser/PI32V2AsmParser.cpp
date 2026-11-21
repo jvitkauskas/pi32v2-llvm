@@ -46,6 +46,21 @@ namespace {
 #define PI32V2_GEN_PARSER_TABLES
 #include "PI32V2ParserGen.inc"
 
+// The forms the AC791N's hardware does not run as their syntax says
+// (pi32v2-isa's table, key `hw`, from runs on the chip): the instruction and
+// "<table id> <what it does>". With that chip as the CPU (-mcpu=ac791n) the
+// assembler warns about them, inline assembly included. The table has 42;
+// 18 of them (iff.ne.rr.*, the unnamed comparisons) have no syntax this
+// parser accepts, so only the other 24 can be warned about.
+struct HwForm {
+  unsigned Opcode;
+  const char *What;
+};
+static const HwForm AC791NForms[] = {
+#define PI32V2_GEN_HW_AC791N
+#include "PI32V2HwGen.inc"
+};
+
 // A word character for canonical form (pi32v2isa.asm.WORDCH, which in effect
 // is [A-Za-z0-9_.$@\\]).
 static bool isWordChar(char C) {
@@ -223,6 +238,15 @@ public:
            Kind == AsmToken::RCurly || Kind == AsmToken::LParen;
   }
   bool equalIsAsmAssignment() override { return false; }
+  // A block still open at the end (of a file, or of an inline asm statement):
+  // its lengths were never set.
+  void onEndOfFile() override {
+    if (!Blocks.empty()) {
+      SMLoc Loc = Blocks.back().Loc;
+      Blocks.clear();
+      Error(Loc, "this block has no closing }");
+    }
+  }
   void convertToMapAndConstraints(unsigned Kind,
                                   const OperandVector &Operands) override {}
 
@@ -930,6 +954,13 @@ bool PI32V2AsmParser::parseInstruction(ParseInstructionInfo &Info,
 bool PI32V2AsmParser::parseLine(StringRef Line, SMLoc NameLoc) {
   MCContext &Ctx = getContext();
 
+  // A block's braces are structure, not instructions: written to an object
+  // they only close it, but text output (inline asm in a .s file) needs them
+  // written out, or it doesn't assemble again.
+  MCStreamer &Out = getParser().getStreamer();
+  if ((Line == "}" || Line == "}else{") && Out.hasRawTextSupport() &&
+      !Blocks.empty())
+    Out.emitRawText(Line == "}" ? "\t}" : "\t} else {");
   if (Line == "}") {
     if (Blocks.empty())
       return Error(NameLoc, "unmatched }");
@@ -1130,6 +1161,12 @@ bool PI32V2AsmParser::matchAndEmitInstruction(SMLoc IDLoc, unsigned &Opcode,
   Pending.reset();
   Inst.setLoc(IDLoc);
   Opcode = Inst.getOpcode();
+  // Not while a module's assembly is only read for its symbols (the IR symbol table, the module summary): the
+  // statement is assembled later, and warned about then.
+  if (getSTI().hasFeature(PI32V2::FeatureAC791N) && !getParser().isSymbolScanningMode())
+    for (const HwForm &F : AC791NForms)
+      if (F.Opcode == Opcode)
+        Warning(IDLoc, Twine(F.What) + " on the AC791N");
   Out.emitInstruction(Inst, getSTI());
   if (Opening) {
     if (!Opening->IsIf)

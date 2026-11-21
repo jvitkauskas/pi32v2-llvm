@@ -10,7 +10,8 @@
 // of one stream (the backend's calling convention places them); every
 // aggregate is passed as a pointer to a copy the caller makes, and returned
 // through a hidden pointer, the first slot. va_list is a pointer to the next
-// word; va_arg of an aggregate reads a pointer to its copy.
+// word; va_arg of an argument passed by reference (an aggregate, a _BitInt wider than 64 bits)
+// reads a pointer to its copy.
 //
 //===----------------------------------------------------------------------===//
 
@@ -26,15 +27,36 @@ public:
   PI32V2ABIInfo(CodeGen::CodeGenTypes &CGT) : DefaultABIInfo(CGT) {}
 
   ABIArgInfo classifyArgumentType(QualType Ty) const {
+    QualType Given = Ty;
     Ty = useFirstFieldIfTransparentUnion(Ty);
+    unsigned AS = getDataLayout().getAllocaAddrSpace();
+    // Passed by reference, a transparent union is a pointer to a copy of the
+    // union: its first field's bytes come first, and the copy is as aligned as
+    // the union, which the callee takes it to be.
     if (isAggregateTypeForABI(Ty)) {
-      unsigned AS = getDataLayout().getAllocaAddrSpace();
       if (CGCXXABI::RecordArgABI RAA = getRecordArgABI(Ty, getCXXABI()))
         return getNaturalAlignIndirect(Ty, AS,
                                        RAA == CGCXXABI::RAA_DirectInMemory);
-      return getNaturalAlignIndirect(Ty, AS, /*ByVal=*/false);
+      return getNaturalAlignIndirect(Given, AS, /*ByVal=*/false);
     }
-    return DefaultABIInfo::classifyArgumentType(Ty);
+    ABIArgInfo Info = DefaultABIInfo::classifyArgumentType(Ty);
+    // What DefaultABIInfo passes by reference (a _BitInt wider than 64 bits)
+    // goes as an aggregate does: a pointer to a copy the caller makes in its
+    // own frame, aligned as the type is. The same pointer word as byval, whose
+    // copy the backend makes in the 4-aligned argument area instead.
+    if (Info.isIndirect())
+      return getNaturalAlignIndirect(Given, AS, /*ByVal=*/false);
+    // A transparent union goes as its first field: in that field's slots, not
+    // the union's, which an alignment attribute may pad. As the field's
+    // in-memory type (i8 for a bool, i64 for a _BitInt(33)), so that no stored
+    // bit of another member is lost. The extension is then the in-memory
+    // type's: a callee declared with the first field's own type (a _BitInt(7),
+    // a bool) gets those bytes as they are, which is that field's value only
+    // when they hold one (u.c = 0x55 through a signed char member reaches a
+    // _BitInt(7) parameter as 85, not -43).
+    if (Ty != Given && Info.canHaveCoerceToType())
+      Info.setCoerceToType(CGT.ConvertTypeForMem(Ty));
+    return Info;
   }
 
   ABIArgInfo classifyReturnType(QualType RetTy) const {
@@ -55,8 +77,60 @@ public:
 
   RValue EmitVAArg(CodeGenFunction &CGF, Address VAListAddr, QualType Ty,
                    AggValueSlot Slot) const override {
-    return emitVoidPtrVAArg(CGF, VAListAddr, Ty, isAggregateTypeForABI(Ty),
-                            getContext().getTypeInfoInChars(Ty),
+    // Read as the caller passed it (classifyArgumentType). By reference (aggregates, _BitInt wider than
+    // 64 bits): a pointer word, to a copy only as aligned as the caller made it. Inline otherwise: a
+    // transparent union passed as its first field takes that field's slots, not the union's size.
+    // A call site classifies an argument's canonical type: alignment a typedef adds isn't the copy's.
+    ABIArgInfo AI = classifyArgumentType(Ty.getCanonicalType());
+    TypeInfoChars Info = getContext().getTypeInfoInChars(Ty);
+    QualType Passed = useFirstFieldIfTransparentUnion(Ty);
+    if (!AI.isIndirect() && Passed != Ty) {
+      // A transparent union passed as its first field: the field's stored
+      // bytes, from its own slots, become the union's first bytes (the union
+      // may be larger). Copied as bytes, as the caller passed them, so a bool
+      // or a _BitInt(33) loses no bit of another member.
+      TypeInfoChars Field = getContext().getTypeInfoInChars(Passed);
+      Address Arg = emitVoidPtrDirectVAArg(
+          CGF, VAListAddr, CGF.ConvertTypeForMem(Passed), Field.Width,
+          Field.Align, CharUnits::fromQuantity(4), /*AllowHigherAlign=*/false);
+      Address Union = CGF.CreateMemTemp(Ty, "va.union");
+      CGF.Builder.CreateMemCpy(Union, Arg, Field.Width.getQuantity());
+      return CGF.EmitLoadOfAnyValue(CGF.MakeAddrLValue(Union, Ty), Slot);
+    }
+    // A vector goes as its lanes, each a scalar argument of its own (the
+    // backend splits it): a lane narrower than a word (char, short, bool)
+    // takes a word, and a three-lane vector three lanes, not the four its
+    // size in memory has. When the lanes are whole words and fill the
+    // vector's size they are laid out as it is in memory, and it is read
+    // below; any other vector is put together from its lanes.
+    if (Ty->isVectorType()) {
+      auto *LTy = cast<llvm::FixedVectorType>(CGF.ConvertType(Ty));
+      llvm::Type *Lane = LTy->getElementType();
+      const llvm::DataLayout &DL = CGF.CGM.getDataLayout();
+      bool Narrow = Lane->isIntegerTy() && Lane->getIntegerBitWidth() < 32;
+      CharUnits Word = CharUnits::fromQuantity(4);
+      CharUnits LaneSize = Narrow ? Word
+                                  : CharUnits::fromQuantity(
+                                        DL.getTypeAllocSize(Lane).getFixedValue());
+      unsigned N = LTy->getNumElements();
+      if (Narrow || LaneSize * N != Info.Width || !LaneSize.isMultipleOf(Word)) {
+        llvm::Type *SlotTy = Narrow ? CGF.Int32Ty : Lane;
+        llvm::Value *V = llvm::PoisonValue::get(LTy);
+        for (unsigned I = 0; I != N; ++I) {
+          Address Slot = emitVoidPtrDirectVAArg(CGF, VAListAddr, SlotTy,
+                                                LaneSize, Word, Word,
+                                                /*AllowHigherAlign=*/false);
+          llvm::Value *L = CGF.Builder.CreateLoad(Slot);
+          if (Narrow)
+            L = CGF.Builder.CreateTrunc(L, Lane);
+          V = CGF.Builder.CreateInsertElement(V, L, I);
+        }
+        return RValue::get(V);
+      }
+    }
+    if (AI.isIndirect())
+      Info.Align = AI.getIndirectAlign();
+    return emitVoidPtrVAArg(CGF, VAListAddr, Ty, AI.isIndirect(), Info,
                             CharUnits::fromQuantity(4),
                             /*AllowHigherAlign=*/false, Slot);
   }

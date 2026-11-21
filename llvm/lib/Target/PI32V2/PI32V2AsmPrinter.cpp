@@ -413,6 +413,21 @@ void PI32V2AsmPrinter::emitOne(const MachineInstr *MI) {
   case PI32V2::SELECT_CC_RII:
     emitSelect(MI);
     return;
+  case PI32V2::PseudoTRAP: {
+    // btbclr traps as an illegal instruction, but the exception is taken late on the AC791N: the goto to
+    // itself is what keeps the code from running on until it arrives.
+    Inst.setOpcode(PI32V2::BTBCLR);
+    EmitToStreamer(*OutStreamer, Inst);
+    MCInst Loop;
+    // PI32V2IfBlocks never puts a trap in an if block, where a goto takes its 32-bit form.
+    assert(!IfThen && !IfElse && "a trap in an if block");
+    // The offset as an immediate (-2: to itself), not a label: no fixup, so the assembler never relaxes it
+    // to the 32-bit form (as -mc-relax-all would), and the trap stays the four bytes getInstSizeInBytes says.
+    Loop.setOpcode(PI32V2::GOTO_S);
+    Loop.addOperand(MCOperand::createImm(-2));
+    EmitToStreamer(*OutStreamer, Loop);
+    return;
+  }
   case PI32V2::PseudoRET:
     // an interrupt handler returns to reti
     Inst.setOpcode(MF->getFunction().hasFnAttribute("interrupt") ? PI32V2::RTI

@@ -367,6 +367,8 @@ unsigned PI32V2InstrInfo::getInstSizeInBytes(const MachineInstr &MI) const {
     return 4; // goto.l at most
   case PI32V2::PseudoDBNZ:
     return 4;
+  case PI32V2::PseudoTRAP:
+    return 4; // btbclr, then a 16-bit goto (never in an if block)
   case PI32V2::PseudoCALLR:
   case PI32V2::PseudoRET:
     return 2;
