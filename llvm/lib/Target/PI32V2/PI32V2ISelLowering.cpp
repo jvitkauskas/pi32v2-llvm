@@ -631,9 +631,12 @@ SDValue PI32V2TargetLowering::LowerCall(CallLoweringInfo &CLI,
     // Nor a pointer into the caller's own frame, which the goto gives up: an
     // aggregate (or a _BitInt wider than 64 bits) goes as a pointer to a copy
     // the caller makes there. Its incoming arguments (fixed objects) are its
-    // caller's, and stay.
+    // caller's, and stay. The address may have a constant offset, and a copy
+    // aligned beyond the stack's alignment is rounded up in its room
+    // (PI32V2AlignAllocas: (sp + 15) & ~15), so both are looked through.
     for (SDValue V : CLI.OutVals) {
-      if (DAG.isBaseWithConstantOffset(V))
+      while (DAG.isBaseWithConstantOffset(V) ||
+             (V.getOpcode() == ISD::AND && isa<ConstantSDNode>(V.getOperand(1))))
         V = V.getOperand(0);
       if (auto *FI = dyn_cast<FrameIndexSDNode>(V))
         Ok &= MF.getFrameInfo().isFixedObjectIndex(FI->getIndex());

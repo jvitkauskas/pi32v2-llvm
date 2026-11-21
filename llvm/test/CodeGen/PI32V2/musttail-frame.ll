@@ -4,11 +4,12 @@
 ; RUN: llc -verify-machineinstrs -mtriple=pi32v2 -mcpu=r3 < %s | FileCheck %s
 ; RUN: sed 's/^; MUST //' %s | not llc -mtriple=pi32v2 -mcpu=r3 -o /dev/null 2>&1 | FileCheck %s --check-prefix=ERR
 ; RUN: sed 's/^; MUSTOFF //' %s | not llc -mtriple=pi32v2 -mcpu=r3 -o /dev/null 2>&1 | FileCheck %s --check-prefix=ERR
+; RUN: sed 's/^; MUSTALIGN //' %s | not llc -mtriple=pi32v2 -mcpu=r3 -o /dev/null 2>&1 | FileCheck %s --check-prefix=ERR
 ; With -pi32v2-large-program there are no tail calls at all.
 ; RUN: not llc -mtriple=pi32v2 -mcpu=r3 -pi32v2-large-program -o /dev/null < %s 2>&1 \
 ; RUN:   | FileCheck %s --check-prefix=LARGE
 
-; ERR: error: {{.*}}in function {{must|must_off}} {{.*}}PI32V2: this musttail call cannot be a tail call
+; ERR: error: {{.*}}in function {{must|must_off|must_align}} {{.*}}PI32V2: this musttail call cannot be a tail call
 ; LARGE: error: {{.*}}in function given {{.*}}PI32V2: no tail calls with -pi32v2-large-program
 
 declare i32 @take(ptr)
@@ -34,6 +35,18 @@ define i32 @copy_off(ptr %p) {
   ret i32 %r
 }
 
+; A copy aligned beyond the stack's 4 bytes is rounded up in its room: (sp + 15) & ~15.
+; CHECK-LABEL: copy_align:
+; CHECK: [[R:r[0-9]+]] = [[R]] & 0xFFFFFFF0
+; CHECK: call take
+; CHECK-NOT: goto take
+define i32 @copy_align(ptr %p) {
+  %c = alloca [16 x i8], align 16
+  call void @llvm.memcpy.p0.p0.i32(ptr align 16 %c, ptr align 4 %p, i32 16, i1 false)
+  %r = tail call i32 @take(ptr %c)
+  ret i32 %r
+}
+
 ; CHECK-LABEL: given:
 ; CHECK: goto take
 define i32 @given(ptr %p) {
@@ -55,3 +68,10 @@ define i32 @given(ptr %p) {
 ; MUSTOFF   %r = musttail call i32 @take(ptr %q)
 ; MUSTOFF   ret i32 %r
 ; MUSTOFF }
+
+; MUSTALIGN define i32 @must_align(ptr %p) {
+; MUSTALIGN   %c = alloca [16 x i8], align 16
+; MUSTALIGN   call void @llvm.memcpy.p0.p0.i32(ptr align 16 %c, ptr align 4 %p, i32 16, i1 false)
+; MUSTALIGN   %r = musttail call i32 @take(ptr %c)
+; MUSTALIGN   ret i32 %r
+; MUSTALIGN }
