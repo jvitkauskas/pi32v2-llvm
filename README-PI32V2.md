@@ -7,7 +7,8 @@ closed toolchain. Unofficial; not affiliated with JieLi or M-VAVE.
 This branch (`pi32v2`) is the release tag `llvmorg-23.1.5` with the target's commits on top, and `llvmorg-23.1.6`
 merged into it. The target lives in
 `llvm/lib/Target/PI32V2`, with small hooks elsewhere (the triple, ELF machine 241 and its relocations, clang's
-target and `interrupt` attribute, the `ld.lld` port in `lld/ELF/Arch/PI32V2.cpp`) and tests in
+target and `interrupt` attribute, the `ld.lld` port in `lld/ELF/Arch/PI32V2.cpp`, an inlining option in
+`llvm/lib/Analysis/InlineCost.cpp`) and tests in
 `llvm/test/CodeGen/PI32V2`, `llvm/test/MC/PI32V2`, `llvm/test/MC/Disassembler/PI32V2` and
 `clang/test/CodeGen/pi32v2-*.c`.
 
@@ -18,6 +19,18 @@ That repository also has the documentation: the backend's status and how it is c
 ([docs/LLVM.md](https://github.com/jvitkauskas/pi32v2-isa/blob/main/docs/LLVM.md)), building and using the
 toolchain ([docs/TOOLCHAIN.md](https://github.com/jvitkauskas/pi32v2-isa/blob/main/docs/TOOLCHAIN.md)), the ISA,
 the ABI and the hardware results.
+
+## Options for smaller code
+
+Both are off unless given, so code built without them is as it was. With `clang` they follow `-mllvm`, with `ld.lld`
+(when it generates the code, under LTO) `-mllvm` too, and with `rustc` `-C llvm-args=`.
+
+- **`-inline-minsize-hint-threshold=50`**, for Rust at `opt-level="z"`. Size-minimum code inlines almost nothing,
+  which leaves the smallest helpers of Rust's `core` as calls: without the option `z` is about 8% bigger than `s`.
+  With it, `z` was 1.1% smaller than `s` on m-bootloader's Rust port. It changed nothing in that project's C.
+- **`-enable-machine-outliner`**: repeated instruction sequences become functions. 5.7% smaller on pi32v2-isa's
+  `tools/llvm/ctest.c`, 1% on m-bootloader's stage 1. Not for code that is stored packed: the packer does better
+  with the repeats than with calls to them, and m-bootloader's packed stage 1 came out 2% bigger.
 
 ## Downloads
 
