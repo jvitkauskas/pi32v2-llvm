@@ -25,6 +25,7 @@
 #include "llvm/CodeGen/MachineFunction.h"
 #include "llvm/CodeGen/MachineInstrBuilder.h"
 #include "llvm/CodeGen/MachineRegisterInfo.h"
+#include "llvm/Analysis/ValueTracking.h"
 #include "llvm/IR/DiagnosticInfo.h"
 #include "llvm/IR/Function.h"
 #include "llvm/Support/CommandLine.h"
@@ -631,9 +632,16 @@ SDValue PI32V2TargetLowering::LowerCall(CallLoweringInfo &CLI,
     // Nor a pointer into the caller's own frame, which the goto gives up: an
     // aggregate (or a _BitInt wider than 64 bits) goes as a pointer to a copy
     // the caller makes there. Its incoming arguments (fixed objects) are its
-    // caller's, and stay. The address may have a constant offset, and a copy
-    // aligned beyond the stack's alignment is rounded up in its room
-    // (PI32V2AlignAllocas: (sp + 15) & ~15), so both are looked through.
+    // caller's, and stay. The IR says where a pointer comes from across
+    // blocks: a copy aligned beyond the stack's alignment is rounded up in its
+    // room in the entry block (PI32V2AlignAllocas, llvm.ptrmask), and a later
+    // block sees only a register.
+    if (CLI.CB)
+      for (const Value *A : CLI.CB->args())
+        if (A->getType()->isPointerTy())
+          Ok &= !isa<AllocaInst>(getUnderlyingObject(A));
+    // Calls with no IR call (libcalls) are checked in the DAG, through
+    // constant offsets and that rounding ((sp + 15) & ~15).
     for (SDValue V : CLI.OutVals) {
       while (DAG.isBaseWithConstantOffset(V) ||
              (V.getOpcode() == ISD::AND && isa<ConstantSDNode>(V.getOperand(1))))

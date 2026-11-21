@@ -10,6 +10,7 @@ struct __attribute__((aligned(16))) A { int x[4]; };
 extern int take_s(struct S);
 extern int take_w(_BitInt(128));
 extern int take_a(struct A);
+extern int take_an(struct A, int);
 extern int take_i(int, int);
 
 int fwd_s(struct S s) { // expected-error {{this musttail call cannot be a tail call}}
@@ -20,6 +21,13 @@ int fwd_w(_BitInt(128) w) { // expected-error {{this musttail call cannot be a t
 }
 int fwd_a(struct A a) { // expected-error {{this musttail call cannot be a tail call}}
   [[clang::musttail]] return take_a(a);
+}
+// In a branch, the copy's rounded address comes from the entry block.
+int fwd_a_cond(struct A a, int n) { // expected-error {{this musttail call cannot be a tail call}}
+  if (n) {
+    [[clang::musttail]] return take_an(a, n);
+  }
+  return 4;
 }
 int fwd_i(int a, int b) {
   [[clang::musttail]] return take_i(b, a);

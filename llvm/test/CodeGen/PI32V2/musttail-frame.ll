@@ -5,14 +5,16 @@
 ; RUN: sed 's/^; MUST //' %s | not llc -mtriple=pi32v2 -mcpu=r3 -o /dev/null 2>&1 | FileCheck %s --check-prefix=ERR
 ; RUN: sed 's/^; MUSTOFF //' %s | not llc -mtriple=pi32v2 -mcpu=r3 -o /dev/null 2>&1 | FileCheck %s --check-prefix=ERR
 ; RUN: sed 's/^; MUSTALIGN //' %s | not llc -mtriple=pi32v2 -mcpu=r3 -o /dev/null 2>&1 | FileCheck %s --check-prefix=ERR
+; RUN: sed 's/^; MUSTCOND //' %s | not llc -mtriple=pi32v2 -mcpu=r3 -o /dev/null 2>&1 | FileCheck %s --check-prefix=ERR
 ; With -pi32v2-large-program there are no tail calls at all.
 ; RUN: not llc -mtriple=pi32v2 -mcpu=r3 -pi32v2-large-program -o /dev/null < %s 2>&1 \
 ; RUN:   | FileCheck %s --check-prefix=LARGE
 
-; ERR: error: {{.*}}in function {{must|must_off|must_align}} {{.*}}PI32V2: this musttail call cannot be a tail call
+; ERR: error: {{.*}}in function {{must|must_off|must_align|must_cond}} {{.*}}PI32V2: this musttail call cannot be a tail call
 ; LARGE: error: {{.*}}in function given {{.*}}PI32V2: no tail calls with -pi32v2-large-program
 
 declare i32 @take(ptr)
+declare i32 @take2(ptr, i1)
 
 ; CHECK-LABEL: copy:
 ; CHECK: call take
@@ -47,6 +49,21 @@ define i32 @copy_align(ptr %p) {
   ret i32 %r
 }
 
+; In another block the rounded address (made in the entry block) is only a register; the IR still says where it is.
+; CHECK-LABEL: copy_cond:
+; CHECK: call take
+; CHECK-NOT: goto take
+define i32 @copy_cond(ptr %p, i1 %b) {
+  %c = alloca [16 x i8], align 16
+  br i1 %b, label %t, label %e
+t:
+  call void @llvm.memcpy.p0.p0.i32(ptr align 16 %c, ptr align 4 %p, i32 16, i1 false)
+  %r = tail call i32 @take(ptr %c)
+  ret i32 %r
+e:
+  ret i32 4
+}
+
 ; CHECK-LABEL: given:
 ; CHECK: goto take
 define i32 @given(ptr %p) {
@@ -75,3 +92,14 @@ define i32 @given(ptr %p) {
 ; MUSTALIGN   %r = musttail call i32 @take(ptr %c)
 ; MUSTALIGN   ret i32 %r
 ; MUSTALIGN }
+
+; MUSTCOND define i32 @must_cond(ptr %p, i1 %b) {
+; MUSTCOND   %c = alloca [16 x i8], align 16
+; MUSTCOND   br i1 %b, label %t, label %e
+; MUSTCOND t:
+; MUSTCOND   call void @llvm.memcpy.p0.p0.i32(ptr align 16 %c, ptr align 4 %p, i32 16, i1 false)
+; MUSTCOND   %r = musttail call i32 @take2(ptr %c, i1 %b)
+; MUSTCOND   ret i32 %r
+; MUSTCOND e:
+; MUSTCOND   ret i32 4
+; MUSTCOND }
