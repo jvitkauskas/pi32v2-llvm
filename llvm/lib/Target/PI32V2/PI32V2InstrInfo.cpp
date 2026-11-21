@@ -15,6 +15,8 @@
 #include "llvm/CodeGen/MachineInstrBuilder.h"
 #include "llvm/CodeGen/MachineJumpTableInfo.h"
 #include "llvm/CodeGen/MachineMemOperand.h"
+#include "llvm/CodeGen/MachineOutliner.h"
+#include "llvm/IR/Module.h"
 #include "llvm/Support/ErrorHandling.h"
 
 #define GET_INSTRINFO_CTOR_DTOR
@@ -420,4 +422,222 @@ unsigned PI32V2InstrInfo::postIncForm(unsigned Opc, unsigned &Skip) {
   case PI32V2::STB_PRE: return PI32V2::ST_B_PRE;
   }
   return 0;
+}
+
+//===----------------------------------------------------------------------===//
+// The machine outliner.
+//
+// A call writes its return address to rets and touches nothing else, the
+// stack included, so a sequence runs the same in a function of its own as
+// where it was: the stack pointer, the flags and every register are as the
+// sequence left them when the function returns with rts. What a sequence may
+// not do is read or write rets, which now holds the way back. So:
+//
+//   Tail   the sequence ends in a return (rts, the epilogue's pop into pc, or
+//          a tail call): a goto reaches the function, which returns for its
+//          caller. rets is untouched.
+//   Thunk  the sequence ends in a call: the function ends in a goto to the
+//          callee, which returns to after the call that reached the function.
+//   Call   anything else without a call in it: a call reaches it and it ends
+//          in rts. Only where rets is dead: in a function that saved it,
+//          which a function that makes calls has.
+//   Frame  anything else with calls in it: as Call, but the function saves
+//          rets around them, [--sp] = rets ... pc = [sp++]. That moves the
+//          stack by a word while the sequence runs, so nothing in it may
+//          use sp, and none of its calls may take arguments on the stack.
+//
+// A sequence that ends in a return may have calls in it as it is: its
+// function saved rets before it, and the return takes that.
+//
+// The passes after the outliner (PI32V2TargetMachine.cpp) see an outlined
+// function's registers as live to its end.
+//===----------------------------------------------------------------------===//
+
+namespace {
+enum OutlineKind { OutlineTail, OutlineThunk, OutlineCall, OutlineFrame };
+} // namespace
+
+static bool isReturnLike(const MachineInstr &MI) {
+  return MI.isReturn() || MI.getOpcode() == PI32V2::POP_PC_RMASK;
+}
+
+static bool touchesRets(const MachineInstr &MI) {
+  for (const MachineOperand &MO : MI.operands())
+    if (MO.isReg() && MO.getReg() == PI32V2::RETS)
+      return true;
+  return MI.getDesc().hasImplicitUseOfPhysReg(PI32V2::RETS) ||
+         MI.getDesc().hasImplicitDefOfPhysReg(PI32V2::RETS);
+}
+
+bool PI32V2InstrInfo::isFunctionSafeToOutlineFrom(
+    MachineFunction &MF, bool OutlineFromLinkOnceODRs) const {
+  const Function &F = MF.getFunction();
+  if (!OutlineFromLinkOnceODRs && F.hasLinkOnceODRLinkage())
+    return false;
+  // A function in a section of its own may have to be all there; a handler
+  // returns with rti; and far calls and gotos are not what this counts with.
+  if (F.hasSection() || F.hasFnAttribute("interrupt") ||
+      F.hasFnAttribute(Attribute::Naked) || isPI32V2LargeProgram())
+    return false;
+  return MF.getProperties().hasTracksLiveness();
+}
+
+bool PI32V2InstrInfo::shouldOutlineFromFunctionByDefault(
+    MachineFunction &MF) const {
+  return MF.getFunction().hasMinSize();
+}
+
+outliner::InstrType
+PI32V2InstrInfo::getOutliningTypeImpl(const MachineModuleInfo &MMI,
+                                      MachineBasicBlock::iterator &MIT,
+                                      unsigned Flags) const {
+  const MachineInstr &MI = *MIT;
+  switch (MI.getOpcode()) {
+  case PI32V2::PseudoCALL: // the last of a sequence only: see below
+  case PI32V2::PseudoTAIL:
+  case PI32V2::PseudoRET:
+  case PI32V2::POP_PC_RMASK:
+    return outliner::InstrType::Legal;
+  case PI32V2::PseudoCALLR:
+  case PI32V2::PseudoBRJT:
+    return outliner::InstrType::Illegal;
+  default:
+    break;
+  }
+  if (MI.isCall() || MI.isCFIInstruction() || touchesRets(MI))
+    return outliner::InstrType::Illegal;
+  return outliner::InstrType::Legal;
+}
+
+std::optional<std::unique_ptr<outliner::OutlinedFunction>>
+PI32V2InstrInfo::getOutliningCandidateInfo(
+    const MachineModuleInfo &MMI,
+    std::vector<outliner::Candidate> &RepeatedSequenceLocs,
+    unsigned MinRepeats) const {
+  outliner::Candidate &First = RepeatedSequenceLocs[0];
+  const MachineInstr &Last = First.back();
+  bool InnerCalls = false, UsesSP = false;
+  for (const MachineInstr &MI : First) {
+    if (&MI == &Last)
+      break;
+    if (isReturnLike(MI))
+      return std::nullopt;
+    if (MI.isCall())
+      InnerCalls = true;
+    else if (MI.readsRegister(PI32V2::SP, &RI) ||
+             MI.modifiesRegister(PI32V2::SP, &RI))
+      UsesSP = true;
+  }
+
+  unsigned Kind = OutlineCall, FrameOverhead = 2; // rts
+  if (isReturnLike(Last)) {
+    Kind = OutlineTail;
+    FrameOverhead = 0;
+  } else if (Last.getOpcode() == PI32V2::PseudoCALL && !InnerCalls) {
+    Kind = OutlineThunk;
+    FrameOverhead = 0;
+  } else {
+    if (InnerCalls || Last.isCall()) {
+      Kind = OutlineFrame;
+      FrameOverhead = 2 + 2; // [--sp] = rets, pc = [sp++]
+      if (UsesSP || (!Last.isCall() &&
+                     (Last.readsRegister(PI32V2::SP, &RI) ||
+                      Last.modifiesRegister(PI32V2::SP, &RI))))
+        return std::nullopt;
+    }
+    // The call to the function overwrites rets; and with a frame, the stack
+    // is a word further down for the calls in the sequence.
+    llvm::erase_if(RepeatedSequenceLocs, [&](outliner::Candidate &C) {
+      if (Kind == OutlineFrame &&
+          (!C.getMF()->getFrameInfo().isMaxCallFrameSizeComputed() ||
+           C.getMF()->getFrameInfo().getMaxCallFrameSize()))
+        return true;
+      return !C.isAvailableAcrossAndOutOfSeq(PI32V2::RETS, RI);
+    });
+    if (RepeatedSequenceLocs.size() < MinRepeats)
+      return std::nullopt;
+  }
+  // call.l, or goto.l: either is 4 bytes at most.
+  for (outliner::Candidate &C : RepeatedSequenceLocs)
+    C.setCallInfo(Kind, 4);
+  unsigned SequenceSize = 0;
+  for (const MachineInstr &MI : RepeatedSequenceLocs[0])
+    SequenceSize += getInstSizeInBytes(MI);
+  return std::make_unique<outliner::OutlinedFunction>(
+      RepeatedSequenceLocs, SequenceSize, FrameOverhead, Kind);
+}
+
+void PI32V2InstrInfo::buildOutlinedFrame(
+    MachineBasicBlock &MBB, MachineFunction &MF,
+    const outliner::OutlinedFunction &OF) const {
+  // The sequence came from one place and stands for all of them: what was
+  // dead or last used there is not everywhere.
+  SmallVector<Register, 16> Defined;
+  for (MachineInstr &MI : MBB) {
+    // What a call does not preserve is no longer what the sequence wrote.
+    for (const MachineOperand &MO : MI.operands())
+      if (MO.isRegMask())
+        llvm::erase_if(Defined, [&](Register R) {
+          return MO.clobbersPhysReg(R.asMCReg());
+        });
+    for (MachineOperand &MO : MI.operands()) {
+      if (!MO.isReg() || !MO.getReg())
+        continue;
+      if (MO.isDef()) {
+        MO.setIsDead(false);
+        if (!is_contained(Defined, MO.getReg()))
+          Defined.push_back(MO.getReg());
+      } else {
+        MO.setIsKill(false);
+      }
+    }
+  }
+  if (OF.FrameConstructionID == OutlineTail)
+    return;
+  // The way back.
+  MBB.addLiveIn(PI32V2::RETS);
+  MachineInstr *End;
+  if (OF.FrameConstructionID == OutlineFrame) {
+    BuildMI(MBB, MBB.begin(), DebugLoc(), get(PI32V2::PUSH_RETS_RMASK))
+        .addImm(0);
+    End = BuildMI(MBB, MBB.end(), DebugLoc(), get(PI32V2::POP_PC_RMASK))
+              .addImm(0);
+  } else if (OF.FrameConstructionID == OutlineThunk) {
+    // The call becomes a goto to its callee, with all it had.
+    MachineInstr &Call = MBB.back();
+    MachineInstrBuilder Tail =
+        BuildMI(MBB, MBB.end(), DebugLoc(), get(PI32V2::PseudoTAIL));
+    for (const MachineOperand &MO : Call.operands())
+      if (!MO.isReg() || (MO.getReg() != PI32V2::RETS &&
+                          !(MO.isImplicit() && MO.getReg() == PI32V2::SP)))
+        Tail.add(MO);
+    Call.eraseFromParent();
+    End = Tail;
+  } else {
+    End = BuildMI(MBB, MBB.end(), DebugLoc(), get(PI32V2::PseudoRET));
+  }
+  // What the sequence wrote is for the code after it, which this function
+  // can't see: live to the end.
+  for (Register R : Defined)
+    if (R != PI32V2::RETS && !End->readsRegister(R, &RI))
+      End->addOperand(MF, MachineOperand::CreateReg(R, /*isDef=*/false,
+                                                    /*isImp=*/true));
+}
+
+MachineBasicBlock::iterator PI32V2InstrInfo::insertOutlinedCall(
+    Module &M, MachineBasicBlock &MBB, MachineBasicBlock::iterator &It,
+    MachineFunction &MF, outliner::Candidate &C) const {
+  unsigned Opc = C.CallConstructionID == OutlineTail ? PI32V2::PseudoTAIL
+                                                     : PI32V2::PseudoCALL;
+  MachineInstrBuilder Call = BuildMI(MF, DebugLoc(), get(Opc))
+                                 .addGlobalAddress(M.getNamedValue(MF.getName()));
+  // The outliner says which registers the sequence reads and writes. What
+  // the calls in it leave undefined, they say: so does this one.
+  if (Opc == PI32V2::PseudoCALL)
+    for (const MachineInstr &MI : C)
+      for (const MachineOperand &MO : MI.operands())
+        if (MO.isRegMask())
+          Call.addRegMask(MO.getRegMask());
+  It = MBB.insert(It, Call);
+  return It;
 }

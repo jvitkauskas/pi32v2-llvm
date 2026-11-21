@@ -63,6 +63,10 @@ PI32V2TargetMachine::PI32V2TargetMachine(const Target &T, const Triple &TT,
                                getEffectiveCodeModel(CM, CodeModel::Small), OL),
       TLOF(std::make_unique<PI32V2TargetObjectFile>()) {
   initAsmInfo();
+  // The machine outliner (PI32V2InstrInfo.cpp), when asked for with
+  // -enable-machine-outliner: not by default, so that code stays as it was.
+  setMachineOutliner(true);
+  setSupportsDefaultOutlining(false);
 }
 
 PI32V2TargetMachine::~PI32V2TargetMachine() = default;

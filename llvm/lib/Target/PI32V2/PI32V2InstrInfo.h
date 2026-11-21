@@ -60,6 +60,27 @@ public:
                                        unsigned OpIdx1,
                                        unsigned OpIdx2) const override;
 
+  // The machine outliner (-enable-machine-outliner): a repeated sequence
+  // becomes a function, reached with a call (rets is the only register that
+  // takes), or with a goto when the sequence ends in a return.
+  bool isFunctionSafeToOutlineFrom(MachineFunction &MF,
+                                   bool OutlineFromLinkOnceODRs) const override;
+  bool shouldOutlineFromFunctionByDefault(MachineFunction &MF) const override;
+  outliner::InstrType getOutliningTypeImpl(const MachineModuleInfo &MMI,
+                                           MachineBasicBlock::iterator &MIT,
+                                           unsigned Flags) const override;
+  std::optional<std::unique_ptr<outliner::OutlinedFunction>>
+  getOutliningCandidateInfo(
+      const MachineModuleInfo &MMI,
+      std::vector<outliner::Candidate> &RepeatedSequenceLocs,
+      unsigned MinRepeats) const override;
+  void buildOutlinedFrame(MachineBasicBlock &MBB, MachineFunction &MF,
+                          const outliner::OutlinedFunction &OF) const override;
+  MachineBasicBlock::iterator
+  insertOutlinedCall(Module &M, MachineBasicBlock &MBB,
+                     MachineBasicBlock::iterator &It, MachineFunction &MF,
+                     outliner::Candidate &C) const override;
+
   /// The conditional branch of the inverse condition, or 0.
   static unsigned inverseBranch(unsigned Opc);
   static bool isCondBranch(unsigned Opc) { return inverseBranch(Opc) != 0; }
