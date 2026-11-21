@@ -46,6 +46,19 @@ namespace {
 #define PI32V2_GEN_PARSER_TABLES
 #include "PI32V2ParserGen.inc"
 
+// The forms the AC791N's hardware does not run as their syntax says
+// (pi32v2-isa's table, key `hw`, from runs on the chip): the instruction and
+// "<table id> <what it does>". With that chip as the CPU (-mcpu=ac791n) the
+// assembler warns about them, inline assembly included.
+struct HwForm {
+  unsigned Opcode;
+  const char *What;
+};
+static const HwForm AC791NForms[] = {
+#define PI32V2_GEN_HW_AC791N
+#include "PI32V2HwGen.inc"
+};
+
 // A word character for canonical form (pi32v2isa.asm.WORDCH, which in effect
 // is [A-Za-z0-9_.$@\\]).
 static bool isWordChar(char C) {
@@ -1146,6 +1159,10 @@ bool PI32V2AsmParser::matchAndEmitInstruction(SMLoc IDLoc, unsigned &Opcode,
   Pending.reset();
   Inst.setLoc(IDLoc);
   Opcode = Inst.getOpcode();
+  if (getSTI().hasFeature(PI32V2::FeatureAC791N))
+    for (const HwForm &F : AC791NForms)
+      if (F.Opcode == Opcode)
+        Warning(IDLoc, Twine(F.What) + " on the AC791N");
   Out.emitInstruction(Inst, getSTI());
   if (Opening) {
     if (!Opening->IsIf)
