@@ -1,8 +1,12 @@
 ; An if block written in inline asm keeps its braces in assembly output (the asm parser closes the
 ; block, and for text writes the brace too), so the .s file assembles again.
 ; RUN: llc -mtriple=pi32v2 -mcpu=r3 < %s | FileCheck %s
-; RUN: llc -mtriple=pi32v2 -mcpu=r3 < %s | llvm-mc -triple=pi32v2 -mcpu=r3 -filetype=obj -o /dev/null
-; RUN: llc -mtriple=pi32v2 -mcpu=r3 -filetype=obj < %s -o /dev/null
+; The assembly output assembles again, to the same code as the object llc writes directly.
+; RUN: llc -mtriple=pi32v2 -mcpu=r3 < %s | llvm-mc -triple=pi32v2 -mcpu=r3 -filetype=obj -o %t.rt.o
+; RUN: llc -mtriple=pi32v2 -mcpu=r3 -filetype=obj < %s -o %t.o
+; RUN: llvm-objdump -d %t.rt.o | grep -v "file format" > %t.rt.dis
+; RUN: llvm-objdump -d %t.o | grep -v "file format" > %t.dis
+; RUN: diff %t.rt.dis %t.dis
 
 ; CHECK-LABEL: if_then:
 ; CHECK:       if (r0 != 0) {

@@ -49,7 +49,11 @@ public:
     // A transparent union goes as its first field: in that field's slots, not
     // the union's, which an alignment attribute may pad. As the field's
     // in-memory type (i8 for a bool, i64 for a _BitInt(33)), so that no stored
-    // bit of another member is lost.
+    // bit of another member is lost. The extension is then the in-memory
+    // type's: a callee declared with the first field's own type (a _BitInt(7),
+    // a bool) gets those bytes as they are, which is that field's value only
+    // when they hold one (u.c = 0x55 through a signed char member reaches a
+    // _BitInt(7) parameter as 85, not -43).
     if (Ty != Given && Info.canHaveCoerceToType())
       Info.setCoerceToType(CGT.ConvertTypeForMem(Ty));
     return Info;

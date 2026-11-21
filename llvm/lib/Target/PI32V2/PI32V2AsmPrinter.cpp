@@ -414,7 +414,8 @@ void PI32V2AsmPrinter::emitOne(const MachineInstr *MI) {
     emitSelect(MI);
     return;
   case PI32V2::PseudoTRAP: {
-    // btbclr traps as an illegal instruction; the goto to itself is for a core where it doesn't.
+    // btbclr traps as an illegal instruction, but the exception is taken late on the AC791N: the goto to
+    // itself is what keeps the code from running on until it arrives.
     Inst.setOpcode(PI32V2::BTBCLR);
     EmitToStreamer(*OutStreamer, Inst);
     MCInst Loop;

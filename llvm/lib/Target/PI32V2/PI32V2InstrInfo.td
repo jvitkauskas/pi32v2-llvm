@@ -105,7 +105,9 @@ def PseudoDBNZ : PI32V2Pseudo<(outs GPR:$dst), (ins GPR:$r, dbnz_target:$n)>;
 
 // A trap (llvm.trap, llvm.debugtrap, llvm.ubsantrap): btbclr, which the AC791N takes as an illegal instruction
 // (the CPU exception, vector 1, with EMU_MSG 2, seen on an FM-1: pi32v2-isa hw/fm1-2026-10-24-app2), then a goto to
-// itself, so that a core where it doesn't trap stops there instead of running on (PI32V2AsmPrinter). Without it,
+// itself. The exception is taken late on the AC791N (instructions after btbclr ran first: hw/fm1-2026-10-24-v5), so
+// the goto is what stops the code there until it arrives (PI32V2AsmPrinter); it is not known to arrive with
+// interrupts masked, where the trap would only spin (until a watchdog). Without it,
 // a trap was a call to abort(). Not a terminator, as other targets' traps aren't: IR may have code after one in its
 // block. With no debugger to return to, llvm.debugtrap traps the same way. Two instructions, so never in an if block
 // (PI32V2IfBlocks).
