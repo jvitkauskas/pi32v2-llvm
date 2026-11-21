@@ -97,6 +97,37 @@ public:
       CGF.Builder.CreateMemCpy(Union, Arg, Field.Width.getQuantity());
       return CGF.EmitLoadOfAnyValue(CGF.MakeAddrLValue(Union, Ty), Slot);
     }
+    // A vector goes as its lanes, each a scalar argument of its own (the
+    // backend splits it): a lane narrower than a word (char, short, bool)
+    // takes a word, and a three-lane vector three lanes, not the four its
+    // size in memory has. When the lanes are whole words and fill the
+    // vector's size they are laid out as it is in memory, and it is read
+    // below; any other vector is put together from its lanes.
+    if (Ty->isVectorType()) {
+      auto *LTy = cast<llvm::FixedVectorType>(CGF.ConvertType(Ty));
+      llvm::Type *Lane = LTy->getElementType();
+      const llvm::DataLayout &DL = CGF.CGM.getDataLayout();
+      bool Narrow = Lane->isIntegerTy() && Lane->getIntegerBitWidth() < 32;
+      CharUnits Word = CharUnits::fromQuantity(4);
+      CharUnits LaneSize = Narrow ? Word
+                                  : CharUnits::fromQuantity(
+                                        DL.getTypeAllocSize(Lane).getFixedValue());
+      unsigned N = LTy->getNumElements();
+      if (Narrow || LaneSize * N != Info.Width || !LaneSize.isMultipleOf(Word)) {
+        llvm::Type *SlotTy = Narrow ? CGF.Int32Ty : Lane;
+        llvm::Value *V = llvm::PoisonValue::get(LTy);
+        for (unsigned I = 0; I != N; ++I) {
+          Address Slot = emitVoidPtrDirectVAArg(CGF, VAListAddr, SlotTy,
+                                                LaneSize, Word, Word,
+                                                /*AllowHigherAlign=*/false);
+          llvm::Value *L = CGF.Builder.CreateLoad(Slot);
+          if (Narrow)
+            L = CGF.Builder.CreateTrunc(L, Lane);
+          V = CGF.Builder.CreateInsertElement(V, L, I);
+        }
+        return RValue::get(V);
+      }
+    }
     if (AI.isIndirect())
       Info.Align = AI.getIndirectAlign();
     return emitVoidPtrVAArg(CGF, VAListAddr, Ty, AI.isIndirect(), Info,
