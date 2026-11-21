@@ -14,7 +14,7 @@ permissions:
 
 env:
   # pi32v2-isa's runtime (tools/llvm/runtime), folded into the builtins
-  PI32V2_ISA_REF: e57532149664a53a4184891f0cd5b65bb703cf07
+  PI32V2_ISA_REF: 058b89bb835d12b194a9f13f51ec153c1d6cc24b
 
 jobs:
   build:
