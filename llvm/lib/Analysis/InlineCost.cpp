@@ -74,6 +74,15 @@ static cl::opt<bool> PrintInstructionComments(
     "print-instruction-comments", cl::Hidden, cl::init(false),
     cl::desc("Prints comments for instruction based on inline cost analysis"));
 
+// Size-minimum code inlines almost nothing: its threshold is 5. That suits C,
+// and costs Rust dearly, whose smallest library helpers (an iterator's next, a
+// slice's get) are then calls. This lets a callee that asks to be inlined be
+// judged by another threshold in a minsize caller. Unset: as it was.
+static cl::opt<int> MinSizeHintThreshold(
+    "inline-minsize-hint-threshold", cl::Hidden, cl::init(-1),
+    cl::desc("Threshold for inlining functions with the inlinehint attribute "
+             "into minsize callers (default: the minsize threshold)"));
+
 static cl::opt<int> InlineThreshold(
     "inline-threshold", cl::Hidden, cl::init(225),
     cl::desc("Control the amount of inlining to perform (default = 225)"));
@@ -2121,6 +2130,9 @@ void InlineCostCallAnalyzer::updateThreshold(CallBase &Call, Function &Callee) {
   // and reduce the threshold if the caller has the necessary attribute.
   if (Caller->hasMinSize()) {
     Threshold = MinIfValid(Threshold, Params.OptMinSizeThreshold);
+    if (MinSizeHintThreshold >= 0 &&
+        Callee.hasFnAttribute(Attribute::InlineHint))
+      Threshold = std::max<int>(Threshold, MinSizeHintThreshold);
     // For minsize, we want to disable the single BB bonus and the vector
     // bonuses, but not the last-call-to-static bonus. Inlining the last call to
     // a static function will, at the minimum, eliminate the parameter setup and
