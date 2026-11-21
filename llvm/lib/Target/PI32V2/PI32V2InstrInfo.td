@@ -552,10 +552,14 @@ def : Pat<(i32 (atomic_load_32 (AddrW i32:$b, i32:$n))), (LD_W_L GPR:$b, $n)>;
 def : Pat<(i32 (atomic_load_zext_16 (AddrH i32:$b, i32:$n))), (LD_HU_L GPR:$b, $n)>;
 def : Pat<(i32 (atomic_load_zext_8 (AddrB i32:$b, i32:$n))), (LD_BU_L GPR:$b, $n)>;
 def : Pat<(i32 (atomic_load_32 (AddrFI i32:$fi, i32:$off))), (LDW_FI $fi, $off)>;
+def : Pat<(i32 (atomic_load_zext_16 (AddrFI i32:$fi, i32:$off))), (LDHU_FI $fi, $off)>;
+def : Pat<(i32 (atomic_load_zext_8 (AddrFI i32:$fi, i32:$off))), (LDBU_FI $fi, $off)>;
 def : Pat<(atomic_store_32 (i32 GPR:$v), (AddrW i32:$b, i32:$n)), (ST_W_L GPR:$b, $n, GPR:$v)>;
 def : Pat<(atomic_store_16 (i32 GPR:$v), (AddrH i32:$b, i32:$n)), (ST_H_L GPR:$b, $n, GPR:$v)>;
 def : Pat<(atomic_store_8 (i32 GPR:$v), (AddrB i32:$b, i32:$n)), (ST_B_L GPR:$b, $n, GPR:$v)>;
 def : Pat<(atomic_store_32 (i32 GPR:$v), (AddrFI i32:$fi, i32:$off)), (STW_FI GPR:$v, $fi, $off)>;
+def : Pat<(atomic_store_16 (i32 GPR:$v), (AddrFI i32:$fi, i32:$off)), (STH_FI GPR:$v, $fi, $off)>;
+def : Pat<(atomic_store_8 (i32 GPR:$v), (AddrFI i32:$fi, i32:$off)), (STB_FI GPR:$v, $fi, $off)>;
 def : Pat<(atomic_fence timm, timm), (CSYNC)>;
 
 // Single-precision float (FeatureFPRev1: -mcpu=r3 and ac791n), as JieLi's
