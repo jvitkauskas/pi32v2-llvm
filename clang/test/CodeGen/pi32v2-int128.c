@@ -3,7 +3,8 @@
 // RUN: not %clang_cc1 -triple pi32v2 -target-cpu r3 -fsyntax-only %s 2>&1 | FileCheck %s --check-prefix=OFF
 // __int128 is off unless -fforce-enable-int128 asks for it (JieLi's compiler has none, and the runtime has no
 // 128-bit helpers). With it, the type is the backend's i128, which is also Rust's i128 and u128 on this target:
-// word-aligned, passed and returned by value (four words), as LLVM passes it to its own runtime calls.
+// word-aligned, and an i128 in the IR, as LLVM passes it to its own runtime calls. The backend gives an argument
+// four words, and returns the value through a hidden pointer, since r0 and r1 hold only two.
 // OFF: __int128 is not supported on this target
 
 typedef unsigned __int128 u128;

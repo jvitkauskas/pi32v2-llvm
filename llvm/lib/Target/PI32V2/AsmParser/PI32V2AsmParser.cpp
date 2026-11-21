@@ -49,7 +49,9 @@ namespace {
 // The forms the AC791N's hardware does not run as their syntax says
 // (pi32v2-isa's table, key `hw`, from runs on the chip): the instruction and
 // "<table id> <what it does>". With that chip as the CPU (-mcpu=ac791n) the
-// assembler warns about them, inline assembly included.
+// assembler warns about them, inline assembly included. The table has 42;
+// 18 of them (iff.ne.rr.*, the unnamed comparisons) have no syntax this
+// parser accepts, so only the other 24 can be warned about.
 struct HwForm {
   unsigned Opcode;
   const char *What;
@@ -1159,7 +1161,9 @@ bool PI32V2AsmParser::matchAndEmitInstruction(SMLoc IDLoc, unsigned &Opcode,
   Pending.reset();
   Inst.setLoc(IDLoc);
   Opcode = Inst.getOpcode();
-  if (getSTI().hasFeature(PI32V2::FeatureAC791N))
+  // Not while a module's assembly is only read for its symbols (the IR symbol table, the module summary): the
+  // statement is assembled later, and warned about then.
+  if (getSTI().hasFeature(PI32V2::FeatureAC791N) && !getParser().isSymbolScanningMode())
     for (const HwForm &F : AC791NForms)
       if (F.Opcode == Opcode)
         Warning(IDLoc, Twine(F.What) + " on the AC791N");

@@ -181,6 +181,7 @@ public:
   bool getShowParsedOperands() const { return ShowParsedOperands; }
   void setShowParsedOperands(bool Value) { ShowParsedOperands = Value; }
 
+  bool isSymbolScanningMode() const { return SymbolScanningMode; }
   void setSymbolScanningMode(bool Value) { SymbolScanningMode = Value; }
 
   /// Run the parser on the input source buffer.
